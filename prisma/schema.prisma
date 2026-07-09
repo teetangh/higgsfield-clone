@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Generation {
+  id        String   @id @default(cuid())
+  prompt    String
+  model     String
+  provider  String
+  size      String
+  status    String   @default("pending")
+  error     String?
+  createdAt DateTime @default(now())
+  images    Image[]
+}
+
+model Image {
+  id           String     @id @default(cuid())
+  generationId String
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  type         String
+  filename     String
+  mimeType     String
+  width        Int?
+  height       Int?
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@index([generationId])
+}

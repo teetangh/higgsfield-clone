@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { GeneratorPage } from "@/components/GeneratorPage";
+import { StudioPage } from "@/components/StudioPage";
 
 export default function Home() {
   return (
@@ -10,7 +10,7 @@ export default function Home() {
         </div>
       }
     >
-      <GeneratorPage />
+      <StudioPage />
     </Suspense>
   );
 }

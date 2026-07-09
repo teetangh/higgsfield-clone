@@ -2,7 +2,10 @@ export type { ModelKey, ArkProvider, ModelDefinition, ModelCapabilities, SizeOpt
 export type {
   ImageRef,
   GenerationResult,
+  GalleryItem,
   ReferenceFile,
   GenerateImageInput,
   GenerateImageOutput,
+  RestorePayload,
+  SettingsSnapshot,
 } from "./generation";

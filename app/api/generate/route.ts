@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isValidModel } from "@/lib/providers";
 import {
+  isValidBatchSize,
+  estimateTotalUsd,
+} from "@/lib/services/cost-estimator";
+import {
   MAX_FILE_SIZE_BYTES,
   runGeneration,
 } from "@/lib/services/generation";
-import { MAX_REFERENCE_IMAGES } from "@/lib/storage";
+import { MAX_REFERENCE_IMAGES, MAX_TOTAL_IMAGES } from "@/lib/storage";
+import type { ModelKey } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +20,8 @@ export async function POST(request: NextRequest) {
     const prompt = (formData.get("prompt") as string | null)?.trim();
     const model = formData.get("model") as string | null;
     const size = (formData.get("size") as string | null) ?? "2K";
+    const batchSizeRaw = parseInt((formData.get("batchSize") as string | null) ?? "1", 10);
+    const confirmBatch = formData.get("confirmBatch") === "true";
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
@@ -21,6 +29,13 @@ export async function POST(request: NextRequest) {
 
     if (!model || !isValidModel(model)) {
       return NextResponse.json({ error: "Invalid model selected." }, { status: 400 });
+    }
+
+    if (!isValidBatchSize(batchSizeRaw)) {
+      return NextResponse.json(
+        { error: "Batch size must be 1, 2, 4, or 8." },
+        { status: 400 }
+      );
     }
 
     const refFiles = formData.getAll("references").filter(
@@ -31,6 +46,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `Maximum ${MAX_REFERENCE_IMAGES} reference images allowed.` },
         { status: 400 }
+      );
+    }
+
+    if (refFiles.length + batchSizeRaw > MAX_TOTAL_IMAGES) {
+      return NextResponse.json(
+        {
+          error: `References (${refFiles.length}) + batch (${batchSizeRaw}) cannot exceed ${MAX_TOTAL_IMAGES}.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const estimatedCost = estimateTotalUsd(model as ModelKey, size, batchSizeRaw);
+    if (batchSizeRaw >= 4 && !confirmBatch) {
+      return NextResponse.json(
+        {
+          error: "confirmation_required",
+          message: `This will cost ~$${estimatedCost.toFixed(2)}. Continue?`,
+          estimatedCostUsd: estimatedCost,
+        },
+        { status: 409 }
       );
     }
 
@@ -53,6 +89,7 @@ export async function POST(request: NextRequest) {
       refFiles.map(async (file) => ({
         buffer: Buffer.from(await file.arrayBuffer()),
         mimeType: file.type,
+        originalName: file.name,
       }))
     );
 
@@ -60,6 +97,7 @@ export async function POST(request: NextRequest) {
       prompt,
       model,
       size,
+      batchSize: batchSizeRaw,
       references,
     });
 
@@ -69,7 +107,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed.";
-    const status = message.includes("Invalid") || message.includes("required") ? 400 : 502;
+    const status =
+      message.includes("Invalid") ||
+      message.includes("required") ||
+      message.includes("exceed") ||
+      message.includes("Budget")
+        ? 400
+        : 502;
     return NextResponse.json({ error: message }, { status });
   }
 }

@@ -25,10 +25,12 @@ export function buildArkRequestBody(
     prompt: string;
     size: string;
     referenceDataUrls?: string[];
+    batchSize?: number;
   }
 ): ArkImageRequestBody {
   const provider = getArkProvider();
   const providerModelId = model.providerModelIds[provider];
+  const batchSize = params.batchSize ?? 1;
 
   const body: ArkImageRequestBody = {
     model: providerModelId,
@@ -46,7 +48,12 @@ export function buildArkRequestBody(
   }
 
   if (model.capabilities.sequentialGeneration) {
-    body.sequential_image_generation = "disabled";
+    if (batchSize > 1) {
+      body.sequential_image_generation = "auto";
+      body.sequential_image_generation_options = { max_images: batchSize };
+    } else {
+      body.sequential_image_generation = "disabled";
+    }
   }
 
   if (model.capabilities.streaming) {

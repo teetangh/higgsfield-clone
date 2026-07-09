@@ -8,15 +8,19 @@ datasource db {
 }
 
 model Generation {
-  id        String   @id @default(cuid())
-  prompt    String
-  model     String
-  provider  String
-  size      String
-  status    String   @default("pending")
-  error     String?
-  createdAt DateTime @default(now())
-  images    Image[]
+  id               String   @id @default(cuid())
+  prompt           String
+  model            String
+  provider         String
+  size             String
+  batchSize        Int      @default(1)
+  status           String   @default("pending")
+  error            String?
+  settingsSnapshot String?
+  estimatedCostUsd Float?
+  actualCostUsd    Float?
+  createdAt        DateTime @default(now())
+  images           Image[]
 }
 
 model Image {
@@ -24,12 +28,32 @@ model Image {
   generationId String
   generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
   type         String
-  filename     String
+  relativePath String
   mimeType     String
   width        Int?
   height       Int?
+  batchIndex   Int?
   sortOrder    Int        @default(0)
   createdAt    DateTime   @default(now())
 
   @@index([generationId])
+}
+
+model ProfileSettings {
+  id                 String   @id @default("default")
+  displayName        String   @default("Studio")
+  billingMode        String   @default("prepaid")
+  manualBalanceUsd   Float?
+  budgetLimitUsd     Float?
+  budgetAlertPercent Int      @default(80)
+  updatedAt          DateTime @updatedAt
+}
+
+model UsageLog {
+  id           String   @id @default(cuid())
+  generationId String?
+  model        String
+  imageCount   Int
+  estimatedUsd Float
+  createdAt    DateTime @default(now())
 }

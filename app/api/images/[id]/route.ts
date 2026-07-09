@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
-import { readStoredFile } from "@/lib/storage";
+import { readImageFile } from "@/lib/storage";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const { searchParams } = new URL(request.url);
+  const width = searchParams.get("w");
 
   const image = await prisma.image.findUnique({ where: { id } });
 
@@ -17,10 +20,29 @@ export async function GET(
   }
 
   try {
-    const buffer = await readStoredFile(
-      image.type === "output" ? "output" : "reference",
-      image.filename
+    let buffer = await readImageFile(
+      image.relativePath,
+      image.type as "reference" | "output",
+      image.generationId
     );
+
+    if (width) {
+      const maxWidth = Math.min(parseInt(width, 10) || 400, 1024);
+      try {
+        buffer = await sharp(buffer)
+          .resize(maxWidth, maxWidth, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        return new NextResponse(new Uint8Array(buffer), {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=86400",
+          },
+        });
+      } catch {
+        // fall through to full image
+      }
+    }
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {

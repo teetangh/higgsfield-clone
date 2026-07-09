@@ -15,4 +15,5 @@ export interface ProviderGenerateRequest {
   prompt: string;
   size: string;
   referenceDataUrls?: string[];
+  batchSize?: number;
 }

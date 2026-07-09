@@ -12,6 +12,7 @@ export interface GenerateImageParams {
   modelKey: ModelKey;
   prompt: string;
   size: string;
+  batchSize?: number;
   referenceImages?: Buffer[];
   referenceMimeTypes?: string[];
 }
@@ -29,6 +30,7 @@ export async function generateImage(
     throw new Error(`Unknown model: ${params.modelKey}`);
   }
 
+  const batchSize = params.batchSize ?? 1;
   const referenceDataUrls =
     params.referenceImages && params.referenceImages.length > 0
       ? params.referenceImages.map((buf, i) =>
@@ -36,10 +38,21 @@ export async function generateImage(
         )
       : undefined;
 
-  return generateWithArk({
+  const request = {
     model,
     prompt: params.prompt,
     size: params.size,
     referenceDataUrls,
-  });
+    batchSize,
+  };
+
+  if (!model.capabilities.sequentialGeneration && batchSize > 1) {
+    const results = await Promise.all(
+      Array.from({ length: batchSize }, () => generateWithArk({ ...request, batchSize: 1 }))
+    );
+    const data = results.flatMap((r) => r.data);
+    return { created: Date.now(), data };
+  }
+
+  return generateWithArk(request);
 }

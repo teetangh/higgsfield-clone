@@ -1,36 +1,47 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ReferenceImageStrip } from "@/components/ReferenceImageStrip";
+import {
+  ALLOWED_BATCH_SIZES,
+  formatCostEstimate,
+} from "@/lib/services/cost-estimator";
 import type { ReferenceFile, ModelKey } from "@/lib/types";
 
 interface PromptDockProps {
   prompt: string;
   model: ModelKey;
   size: string;
+  batchSize: number;
   references: ReferenceFile[];
   isLoading: boolean;
+  remainingBudgetUsd: number | null;
   onPromptChange: (prompt: string) => void;
   onModelChange: (model: ModelKey) => void;
   onSizeChange: (size: string) => void;
+  onBatchSizeChange: (batchSize: number) => void;
   onReferencesChange: (refs: ReferenceFile[]) => void;
-  onGenerate: () => void;
+  onGenerate: (confirmBatch?: boolean) => void;
 }
 
 export function PromptDock({
   prompt,
   model,
   size,
+  batchSize,
   references,
   isLoading,
+  remainingBudgetUsd,
   onPromptChange,
   onModelChange,
   onSizeChange,
+  onBatchSizeChange,
   onReferencesChange,
   onGenerate,
 }: PromptDockProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const costLabel = formatCostEstimate(model, size, batchSize);
 
   const handleAddReferences = useCallback(
     (fileList: FileList | File[]) => {
@@ -86,7 +97,7 @@ export function PromptDock({
         />
         <button
           type="button"
-          onClick={onGenerate}
+          onClick={() => onGenerate()}
           disabled={isLoading || !prompt.trim()}
           className="shrink-0 self-end rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-black transition-opacity hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -94,15 +105,36 @@ export function PromptDock({
         </button>
       </div>
 
-      <div className="flex items-center justify-between">
-        <ModelSelector
-          model={model}
-          size={size}
-          onModelChange={onModelChange}
-          onSizeChange={onSizeChange}
-          disabled={isLoading}
-        />
-        <span className="text-xs text-white/25">⌘ + Enter to generate</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <ModelSelector
+            model={model}
+            size={size}
+            onModelChange={onModelChange}
+            onSizeChange={onSizeChange}
+            disabled={isLoading}
+          />
+          <select
+            value={batchSize}
+            onChange={(e) => onBatchSizeChange(parseInt(e.target.value, 10))}
+            disabled={isLoading}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-yellow-400/50 disabled:opacity-50"
+            aria-label="Batch size"
+          >
+            {ALLOWED_BATCH_SIZES.map((n) => (
+              <option key={n} value={n} className="bg-neutral-900">
+                Batch {n}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col items-end gap-0.5 text-xs text-white/40">
+          <span>Est. cost: {costLabel}</span>
+          {remainingBudgetUsd != null && (
+            <span>Budget: ${remainingBudgetUsd.toFixed(2)} remaining</span>
+          )}
+          <span className="text-white/25">⌘ + Enter to generate</span>
+        </div>
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ import type {
   SettingsSnapshot,
 } from "@/lib/types";
 import type { ModelKey } from "@/lib/types";
+import { createPendingGalleryItems } from "@/lib/studio/pending-gallery";
 
 function imageUrl(id: string, thumb = false): string {
   return thumb ? `/api/images/${id}?w=400` : `/api/images/${id}`;
@@ -77,34 +78,6 @@ export function serializeGeneration(
   };
 }
 
-export function toGalleryPlaceholder(
-  gen: {
-    id: string;
-    prompt: string;
-    model: string;
-    size: string;
-    batchSize: number;
-    status: string;
-    createdAt: Date;
-  }
-): GalleryItem | null {
-  if (gen.status !== "pending" && gen.status !== "processing") return null;
-
-  return {
-    id: `pending-${gen.id}`,
-    generationId: gen.id,
-    prompt: gen.prompt,
-    model: gen.model,
-    size: gen.size,
-    batchSize: gen.batchSize,
-    status: gen.status,
-    imageUrl: "",
-    thumbUrl: "",
-    isPending: true,
-    createdAt: gen.createdAt.toISOString(),
-  };
-}
-
 export function toGalleryItem(
   gen: {
     id: string;
@@ -127,7 +100,7 @@ export function toGalleryItem(
     .filter((img) => img.type === "output")
     .sort((a, b) => (a.batchIndex ?? 0) - (b.batchIndex ?? 0))[0];
 
-  if (!output) return toGalleryPlaceholder(gen);
+  if (!output) return null;
 
   return {
     id: output.id,
@@ -169,8 +142,18 @@ export function toGalleryItemsFromGeneration(gen: {
     .sort((a, b) => (a.batchIndex ?? 0) - (b.batchIndex ?? 0));
 
   if (outputs.length === 0) {
-    const placeholder = toGalleryPlaceholder({ ...gen, createdAt: new Date(createdAt) });
-    return placeholder ? [placeholder] : [];
+    if (gen.status === "pending" || gen.status === "processing") {
+      return createPendingGalleryItems({
+        id: gen.id,
+        prompt: gen.prompt,
+        model: gen.model,
+        size: gen.size,
+        batchSize: gen.batchSize,
+        status: gen.status,
+        createdAt,
+      });
+    }
+    return [];
   }
 
   return outputs.map((output) => ({

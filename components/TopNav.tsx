@@ -6,8 +6,7 @@ import { useStudioOptional } from "@/components/StudioProvider";
 import {
   GRID_COLUMN_MAX,
   GRID_COLUMN_MIN,
-  gridColumnsToSlider,
-  sliderToGridColumns,
+  clampGridColumns,
 } from "@/lib/studio/grid";
 
 export function TopNav() {
@@ -15,8 +14,6 @@ export function TopNav() {
   const isProfile = pathname === "/profile";
   const isHome = pathname === "/";
   const studio = useStudioOptional();
-
-  const sliderValue = studio ? gridColumnsToSlider(studio.gridColumns) : 4;
 
   return (
     <header className="flex shrink-0 items-center justify-between border-b border-white/5 px-6 py-4">
@@ -27,21 +24,22 @@ export function TopNav() {
       <div className="flex items-center gap-4">
         {isHome && studio && (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-white/40">Small</span>
             <input
               id="grid-size"
               type="range"
               min={GRID_COLUMN_MIN}
               max={GRID_COLUMN_MAX}
               step={1}
-              value={sliderValue}
+              value={studio.gridColumns}
               onChange={(e) =>
-                studio.setGridColumns(sliderToGridColumns(parseInt(e.target.value, 10)))
+                studio.setGridColumns(clampGridColumns(parseInt(e.target.value, 10)))
               }
               className="h-1 w-24 cursor-pointer accent-yellow-400"
-              aria-label="Grid image size"
+              aria-label="Images per row"
             />
-            <span className="text-xs text-white/40">Big</span>
+            <span className="min-w-[4.5rem] text-xs text-white/50">
+              {studio.gridColumns} per row
+            </span>
           </div>
         )}
 

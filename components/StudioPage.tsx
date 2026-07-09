@@ -10,6 +10,7 @@ import { TopNav } from "@/components/TopNav";
 import { useStudio } from "@/components/StudioProvider";
 import { useGenerationPoller } from "@/lib/hooks/useGenerationPoller";
 import { getDefaultSizeForModel } from "@/lib/config/models";
+import { createPendingGalleryItems } from "@/lib/studio/pending-gallery";
 import { captureClientException } from "@/lib/sentry";
 import { showConfirmToast, showUserError, showUserInfo, showUserSuccess } from "@/lib/toast";
 import type {
@@ -26,30 +27,6 @@ async function urlToReferenceFile(url: string, index: number): Promise<Reference
   const ext = blob.type.split("/")[1] ?? "png";
   const file = new File([blob], `reference-${index + 1}.${ext}`, { type: blob.type });
   return { file, previewUrl: URL.createObjectURL(file) };
-}
-
-function placeholderFromStart(data: {
-  id: string;
-  prompt: string;
-  model: string;
-  size: string;
-  batchSize: number;
-  status: string;
-  createdAt: string;
-}): GalleryItem {
-  return {
-    id: `pending-${data.id}`,
-    generationId: data.id,
-    prompt: data.prompt,
-    model: data.model,
-    size: data.size,
-    batchSize: data.batchSize,
-    status: data.status,
-    imageUrl: "",
-    thumbUrl: "",
-    isPending: true,
-    createdAt: data.createdAt,
-  };
 }
 
 export function StudioPage() {
@@ -268,8 +245,11 @@ export function StudioPage() {
           throw new Error(data.error ?? "Generation failed.");
         }
 
-        const placeholder = placeholderFromStart(data);
-        setGalleryItems((prev) => [placeholder, ...prev.filter((item) => item.generationId !== data.id)]);
+        const placeholders = createPendingGalleryItems(data);
+        setGalleryItems((prev) => [
+          ...placeholders,
+          ...prev.filter((item) => item.generationId !== data.id),
+        ]);
         trackGeneration(data.id);
         showUserInfo("Generation started in the background.");
 

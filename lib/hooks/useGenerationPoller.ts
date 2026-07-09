@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureClientException } from "@/lib/sentry";
+import { createPendingGalleryItems } from "@/lib/studio/pending-gallery";
 import { showUserError, showUserSuccess } from "@/lib/toast";
 import type { GalleryItem, GenerationResult } from "@/lib/types";
 
@@ -23,25 +24,17 @@ function writeTrackedIds(ids: string[]) {
   sessionStorage.setItem(ACTIVE_KEY, JSON.stringify(ids));
 }
 
-function placeholderFromGeneration(gen: GenerationResult): GalleryItem {
-  return {
-    id: `pending-${gen.id}`,
-    generationId: gen.id,
-    prompt: gen.prompt,
-    model: gen.model,
-    size: gen.size,
-    batchSize: gen.batchSize,
-    status: gen.status,
-    imageUrl: "",
-    thumbUrl: "",
-    isPending: true,
-    createdAt: gen.createdAt,
-  };
-}
-
 function galleryItemsFromGeneration(gen: GenerationResult): GalleryItem[] {
   if (gen.status === "pending" || gen.status === "processing") {
-    return [placeholderFromGeneration(gen)];
+    return createPendingGalleryItems({
+      id: gen.id,
+      prompt: gen.prompt,
+      model: gen.model,
+      size: gen.size,
+      batchSize: gen.batchSize,
+      status: gen.status,
+      createdAt: gen.createdAt,
+    });
   }
 
   if (gen.status !== "completed" || gen.outputImages.length === 0) {

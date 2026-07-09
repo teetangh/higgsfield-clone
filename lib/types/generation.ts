@@ -33,6 +33,7 @@ export interface GalleryItem {
   imageWidth?: number | null;
   imageHeight?: number | null;
   isPending?: boolean;
+  pendingIndex?: number;
   createdAt: string;
 }
 

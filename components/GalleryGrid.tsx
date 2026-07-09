@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatElapsedTime } from "@/lib/studio/pending-gallery";
 import { getGalleryImageDimensions } from "@/lib/studio/size";
 import type { GalleryItem } from "@/lib/types";
 
@@ -24,6 +25,19 @@ const COLUMN_CLASSES: Record<number, string> = {
 function PendingGalleryTile({ item }: { item: GalleryItem }) {
   const { width, height } = getGalleryImageDimensions(item.size);
   const aspectRatio = width / height;
+  const [elapsed, setElapsed] = useState(() => formatElapsedTime(item.createdAt));
+
+  useEffect(() => {
+    const update = () => setElapsed(formatElapsedTime(item.createdAt));
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [item.createdAt]);
+
+  const batchLabel =
+    item.batchSize > 1 && item.pendingIndex != null
+      ? `Image ${item.pendingIndex + 1} of ${item.batchSize}`
+      : null;
 
   return (
     <div className="mb-3 break-inside-avoid">
@@ -34,9 +48,10 @@ function PendingGalleryTile({ item }: { item: GalleryItem }) {
         <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/5 via-yellow-400/10 to-white/5" />
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-yellow-400/30 border-t-yellow-400" />
-          <p className="text-xs text-yellow-400/80">
-            {item.status === "processing" ? "Generating…" : "Queued…"}
+          <p className="text-xs font-medium text-yellow-400/90">
+            {item.status === "processing" ? "Generating" : "Queued"} · {elapsed}
           </p>
+          {batchLabel && <p className="text-[10px] text-white/50">{batchLabel}</p>}
           <p className="line-clamp-2 text-[10px] text-white/40">{item.prompt}</p>
         </div>
       </div>

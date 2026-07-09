@@ -1,4 +1,4 @@
-export type { ModelKey, ArkProvider, ModelDefinition, ModelCapabilities, SizeOption } from "./model";
+export type { ModelKey, ArkProvider, ModelDefinition, ModelCapabilities, SizeOption, SizeOptionGroup } from "./model";
 export type {
   ImageRef,
   GenerationResult,

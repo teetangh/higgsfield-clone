@@ -17,3 +17,28 @@ export function showUserInfo(message: string) {
 export function showUserSuccess(message: string) {
   toast.success(message);
 }
+
+interface ConfirmToastOptions {
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void;
+}
+
+export function showConfirmToast(message: string, options: ConfirmToastOptions) {
+  toast(message, {
+    duration: 15000,
+    action: {
+      label: options.confirmLabel ?? "Confirm",
+      onClick: () => {
+        void options.onConfirm();
+      },
+    },
+    cancel: {
+      label: options.cancelLabel ?? "Cancel",
+      onClick: () => {
+        options.onCancel?.();
+      },
+    },
+  });
+}

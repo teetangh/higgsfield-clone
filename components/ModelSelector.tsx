@@ -1,6 +1,9 @@
 "use client";
 
-import { getSizeOptionsForModel, MODEL_OPTIONS } from "@/lib/config/models";
+import {
+  getSizeOptionGroupsForModel,
+  MODEL_OPTIONS,
+} from "@/lib/config/models";
 import type { ModelKey } from "@/lib/types";
 
 interface ModelSelectorProps {
@@ -18,7 +21,7 @@ export function ModelSelector({
   onSizeChange,
   disabled,
 }: ModelSelectorProps) {
-  const sizeOptions = getSizeOptionsForModel(model);
+  const sizeGroups = getSizeOptionGroupsForModel(model);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -41,10 +44,14 @@ export function ModelSelector({
         disabled={disabled}
         className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-yellow-400/50 disabled:opacity-50"
       >
-        {sizeOptions.map((opt) => (
-          <option key={opt.value} value={opt.value} className="bg-neutral-900">
-            {opt.label}
-          </option>
+        {sizeGroups.map((group) => (
+          <optgroup key={group.label} label={group.label} className="bg-neutral-900">
+            {group.options.map((opt) => (
+              <option key={opt.value} value={opt.value} className="bg-neutral-900">
+                {opt.label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </div>

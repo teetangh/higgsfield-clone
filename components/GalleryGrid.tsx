@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef } from "react";
 import type { GalleryItem } from "@/lib/types";
 
@@ -20,6 +19,55 @@ const COLUMN_CLASSES: Record<number, string> = {
   5: "columns-5",
   6: "columns-6",
 };
+
+function GalleryTile({
+  item,
+  onImageClick,
+}: {
+  item: GalleryItem;
+  onImageClick: (item: GalleryItem) => void;
+}) {
+  return (
+    <div className="mb-3 break-inside-avoid">
+      <div className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30">
+        <button
+          type="button"
+          onClick={() => onImageClick(item)}
+          className="block w-full"
+          aria-label={`Preview: ${item.prompt}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.thumbUrl}
+            alt={item.prompt}
+            className="block h-auto w-full"
+            loading="lazy"
+            decoding="async"
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onImageClick(item);
+          }}
+          className="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/80 opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+          aria-label="View generation details"
+        >
+          Details
+        </button>
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="line-clamp-2 text-left text-[10px] text-white/80">{item.prompt}</p>
+          {item.batchSize > 1 && (
+            <span className="text-[10px] text-yellow-400/80">{item.batchSize} images</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function GalleryGrid({
   items,
@@ -62,49 +110,7 @@ export function GalleryGrid({
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4">
       <div className={`${columnClass} gap-3`}>
         {items.map((item) => (
-          <div
-            key={item.id}
-            className="mb-3 break-inside-avoid"
-            style={{ contentVisibility: "auto", containIntrinsicSize: "0 200px" }}
-          >
-            <div className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30">
-              <button
-                type="button"
-                onClick={() => onImageClick(item)}
-                className="block w-full"
-                aria-label={`Preview: ${item.prompt}`}
-              >
-                <Image
-                  src={item.thumbUrl}
-                  alt={item.prompt}
-                  width={400}
-                  height={400}
-                  className="h-auto w-full object-cover"
-                  unoptimized
-                  loading="lazy"
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onImageClick(item);
-                }}
-                className="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/80 opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
-                aria-label="View generation details"
-              >
-                Details
-              </button>
-
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
-                <p className="line-clamp-2 text-left text-[10px] text-white/80">{item.prompt}</p>
-                {item.batchSize > 1 && (
-                  <span className="text-[10px] text-yellow-400/80">{item.batchSize} images</span>
-                )}
-              </div>
-            </div>
-          </div>
+          <GalleryTile key={item.id} item={item} onImageClick={onImageClick} />
         ))}
       </div>
 

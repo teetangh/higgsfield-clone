@@ -10,8 +10,10 @@ import { estimateTotalUsd } from "@/lib/services/cost-estimator";
 import { checkBudgetAllowed, logUsage } from "@/lib/services/profile.service";
 import {
   downloadImageToStorage,
+  getImageDimensions,
   MAX_FILE_SIZE_BYTES,
   MAX_TOTAL_IMAGES,
+  readImageFile,
   saveOutput,
   saveReference,
 } from "@/lib/storage";
@@ -84,7 +86,13 @@ export function toGalleryItem(
     batchSize: number;
     status: string;
     createdAt: Date;
-    images: Array<{ id: string; type: string; batchIndex: number | null }>;
+    images: Array<{
+      id: string;
+      type: string;
+      batchIndex: number | null;
+      width?: number | null;
+      height?: number | null;
+    }>;
   }
 ): GalleryItem | null {
   const output = gen.images
@@ -103,6 +111,8 @@ export function toGalleryItem(
     status: gen.status,
     imageUrl: imageUrl(output.id),
     thumbUrl: imageUrl(output.id, true),
+    imageWidth: output.width,
+    imageHeight: output.height,
     createdAt: gen.createdAt.toISOString(),
   };
 }
@@ -205,6 +215,7 @@ export async function runGeneration(
       const outputData = result.data[i];
       let relativePath: string;
       let outputMimeType: string;
+      let outputBuffer: Buffer | null = null;
 
       if (outputData.url) {
         const downloaded = await downloadImageToStorage(
@@ -214,14 +225,17 @@ export async function runGeneration(
         );
         relativePath = downloaded.relativePath;
         outputMimeType = downloaded.mimeType;
+        outputBuffer = await readImageFile(relativePath, "output", generation.id);
       } else if (outputData.b64_json) {
-        const buffer = Buffer.from(outputData.b64_json, "base64");
+        outputBuffer = Buffer.from(outputData.b64_json, "base64");
         outputMimeType = "image/png";
-        const saved = await saveOutput(generation.id, buffer, outputMimeType, i);
+        const saved = await saveOutput(generation.id, outputBuffer, outputMimeType, i);
         relativePath = saved.relativePath;
       } else {
         continue;
       }
+
+      const dimensions = outputBuffer ? await getImageDimensions(outputBuffer) : null;
 
       const outputImage = await prisma.image.create({
         data: {
@@ -229,6 +243,8 @@ export async function runGeneration(
           type: "output",
           relativePath,
           mimeType: outputMimeType,
+          width: dimensions?.width,
+          height: dimensions?.height,
           batchIndex: i,
           sortOrder: i,
         },

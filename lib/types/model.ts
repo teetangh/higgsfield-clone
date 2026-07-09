@@ -23,3 +23,8 @@ export interface SizeOption {
   value: string;
   label: string;
 }
+
+export interface SizeOptionGroup {
+  label: string;
+  options: SizeOption[];
+}

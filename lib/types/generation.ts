@@ -30,6 +30,8 @@ export interface GalleryItem {
   status: string;
   imageUrl: string;
   thumbUrl: string;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   createdAt: string;
 }
 

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 
@@ -81,6 +81,26 @@ export async function saveThumbnail(
     const thumbFull = path.join(getGenerationDir(generationId), thumbRelative);
     await writeFile(thumbFull, thumbBuffer);
     return thumbRelative;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteGenerationStorage(generationId: string): Promise<void> {
+  try {
+    await rm(getGenerationDir(generationId), { recursive: true, force: true });
+  } catch {
+    // Directory may already be missing.
+  }
+}
+
+export async function getImageDimensions(
+  buffer: Buffer
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const metadata = await sharp(buffer).metadata();
+    if (!metadata.width || !metadata.height) return null;
+    return { width: metadata.width, height: metadata.height };
   } catch {
     return null;
   }

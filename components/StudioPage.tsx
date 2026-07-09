@@ -10,7 +10,7 @@ import { TopNav } from "@/components/TopNav";
 import { useStudio } from "@/components/StudioProvider";
 import { getDefaultSizeForModel } from "@/lib/config/models";
 import { captureClientException } from "@/lib/sentry";
-import { showUserError, showUserInfo } from "@/lib/toast";
+import { showConfirmToast, showUserError, showUserInfo, showUserSuccess } from "@/lib/toast";
 import type {
   GalleryItem,
   GenerationResult,
@@ -91,6 +91,7 @@ export function StudioPage() {
   const [isLoadingGallery, setIsLoadingGallery] = useState(false);
 
   const [previewItem, setPreviewItem] = useState<GalleryItem | null>(null);
+  const [isDeletingGeneration, setIsDeletingGeneration] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const generateStartedAtRef = useRef<number | null>(null);
@@ -280,10 +281,13 @@ export function StudioPage() {
 
         if (response.status === 409 && data.error === "confirmation_required") {
           setIsGenerating(false);
-          const ok = window.confirm(data.message);
-          if (ok) {
-            await handleGenerate(true, overrides);
-          }
+          showConfirmToast(data.message, {
+            confirmLabel: "Continue",
+            cancelLabel: "Cancel",
+            onConfirm: () => {
+              void handleGenerate(true, overrides);
+            },
+          });
           return;
         }
 
@@ -372,6 +376,35 @@ export function StudioPage() {
     [handleGenerate, handleCloseDetails]
   );
 
+  const handleDelete = useCallback(
+    async (generation: GenerationResult) => {
+      setIsDeletingGeneration(true);
+      try {
+        const res = await fetch(`/api/generations/${generation.id}`, { method: "DELETE" });
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!res.ok) {
+          throw new Error(data.error ?? "Failed to delete generation.");
+        }
+
+        setGalleryItems((prev) =>
+          prev.filter((item) => item.generationId !== generation.id)
+        );
+        handleCloseDetails();
+        setPreviewItem((current) =>
+          current?.generationId === generation.id ? null : current
+        );
+        showUserSuccess("Generation deleted.");
+      } catch (err) {
+        captureClientException(err, "StudioPage.handleDelete");
+        showUserError(err);
+      } finally {
+        setIsDeletingGeneration(false);
+      }
+    },
+    [setGalleryItems, handleCloseDetails]
+  );
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[#0a0a0a] text-white">
       <TopNav />
@@ -417,6 +450,8 @@ export function StudioPage() {
           onClose={handleCloseDetails}
           onReuse={handleReuse}
           onRegenerate={handleRegenerate}
+          onDelete={handleDelete}
+          isDeleting={isDeletingGeneration}
           onZoom={(url) => {
             const item = galleryItems.find((g) => g.imageUrl === url || g.thumbUrl === url);
             if (item) setPreviewItem(item);

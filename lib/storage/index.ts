@@ -10,4 +10,6 @@ export {
   saveThumbnail,
   readImageFile,
   downloadImageToStorage,
+  deleteGenerationStorage,
+  getImageDimensions,
 } from "@/lib/services/storage.service";

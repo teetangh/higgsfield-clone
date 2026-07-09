@@ -2,7 +2,6 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -18,6 +17,15 @@ import type {
 } from "@/lib/types";
 
 const SESSION_KEY = "seedream-studio-session";
+
+const DEFAULT_SESSION = {
+  prompt: "",
+  model: "seedream-5-pro" as ModelKey,
+  size: "2K",
+  batchSize: 1,
+  gridColumns: 4,
+  selectedGenerationId: null as string | null,
+};
 
 interface PersistedSession {
   prompt: string;
@@ -47,62 +55,54 @@ interface StudioContextValue {
   setSelectedGeneration: (value: GenerationResult | null) => void;
   selectedGenerationId: string | null;
   setSelectedGenerationId: (value: string | null) => void;
+  hydrated: boolean;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
 
-function loadPersistedSession(): PersistedSession {
-  if (typeof window === "undefined") {
-    return {
-      prompt: "",
-      model: "seedream-5-pro",
-      size: "2K",
-      batchSize: 1,
-      gridColumns: 4,
-      selectedGenerationId: null,
-    };
-  }
-
+function readPersistedSession(): PersistedSession {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) throw new Error("empty");
     const parsed = JSON.parse(raw) as PersistedSession;
     return {
-      prompt: parsed.prompt ?? "",
-      model: (parsed.model as ModelKey) ?? "seedream-5-pro",
-      size: parsed.size ?? getDefaultSizeForModel(parsed.model as ModelKey),
-      batchSize: parsed.batchSize ?? 1,
-      gridColumns: Math.min(6, Math.max(2, parsed.gridColumns ?? 4)),
+      prompt: parsed.prompt ?? DEFAULT_SESSION.prompt,
+      model: (parsed.model as ModelKey) ?? DEFAULT_SESSION.model,
+      size: parsed.size ?? getDefaultSizeForModel((parsed.model as ModelKey) ?? DEFAULT_SESSION.model),
+      batchSize: parsed.batchSize ?? DEFAULT_SESSION.batchSize,
+      gridColumns: Math.min(6, Math.max(2, parsed.gridColumns ?? DEFAULT_SESSION.gridColumns)),
       selectedGenerationId: parsed.selectedGenerationId ?? null,
     };
   } catch {
-    return {
-      prompt: "",
-      model: "seedream-5-pro",
-      size: "2K",
-      batchSize: 1,
-      gridColumns: 4,
-      selectedGenerationId: null,
-    };
+    return { ...DEFAULT_SESSION };
   }
 }
 
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [initial] = useState(loadPersistedSession);
-
-  const [prompt, setPrompt] = useState(initial.prompt);
-  const [model, setModel] = useState<ModelKey>(initial.model);
-  const [size, setSize] = useState(initial.size);
-  const [batchSize, setBatchSize] = useState(initial.batchSize);
+  const [prompt, setPrompt] = useState(DEFAULT_SESSION.prompt);
+  const [model, setModel] = useState<ModelKey>(DEFAULT_SESSION.model);
+  const [size, setSize] = useState(DEFAULT_SESSION.size);
+  const [batchSize, setBatchSize] = useState(DEFAULT_SESSION.batchSize);
   const [references, setReferences] = useState<ReferenceFile[]>([]);
-  const [gridColumns, setGridColumns] = useState(initial.gridColumns);
+  const [gridColumns, setGridColumns] = useState(DEFAULT_SESSION.gridColumns);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [selectedGeneration, setSelectedGeneration] = useState<GenerationResult | null>(null);
-  const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(
-    initial.selectedGenerationId
-  );
+  const [selectedGenerationId, setSelectedGenerationId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const persisted = readPersistedSession();
+    setPrompt(persisted.prompt);
+    setModel(persisted.model);
+    setSize(persisted.size);
+    setBatchSize(persisted.batchSize);
+    setGridColumns(persisted.gridColumns);
+    setSelectedGenerationId(persisted.selectedGenerationId);
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     const payload: PersistedSession = {
       prompt,
       model,
@@ -112,7 +112,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       selectedGenerationId,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-  }, [prompt, model, size, batchSize, gridColumns, selectedGenerationId]);
+  }, [hydrated, prompt, model, size, batchSize, gridColumns, selectedGenerationId]);
 
   const value = useMemo(
     () => ({
@@ -134,6 +134,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setSelectedGeneration,
       selectedGenerationId,
       setSelectedGenerationId,
+      hydrated,
     }),
     [
       prompt,
@@ -145,6 +146,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       galleryItems,
       selectedGeneration,
       selectedGenerationId,
+      hydrated,
     ]
   );
 

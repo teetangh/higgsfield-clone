@@ -112,7 +112,8 @@ async function postHandler(request: NextRequest) {
       message.includes("Invalid") ||
       message.includes("required") ||
       message.includes("exceed") ||
-      message.includes("Budget")
+      message.includes("Budget") ||
+      message.includes("sensitive information")
         ? 400
         : 502;
 

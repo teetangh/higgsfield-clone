@@ -2,10 +2,28 @@ import * as Sentry from "@sentry/nextjs";
 
 export type SentryContext = Record<string, unknown>;
 
+export function isExpectedUserError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Prompt is required") ||
+    message.includes("Invalid model") ||
+    message.includes("Batch size must be") ||
+    message.includes("Budget") ||
+    message.includes("exceed") ||
+    message.includes("sensitive information") ||
+    message.includes("confirmation_required") ||
+    message.includes("Generation cancelled") ||
+    message.includes("Maximum") ||
+    message.includes("must be images")
+  );
+}
+
 export function captureException(
   error: unknown,
   context?: SentryContext
 ): void {
+  if (isExpectedUserError(error)) return;
+
   Sentry.withScope((scope) => {
     if (context) {
       scope.setContext("details", context);
@@ -27,6 +45,7 @@ export function captureRouteException(
   status?: number,
   extra?: SentryContext
 ): void {
+  if (isExpectedUserError(error)) return;
   if (status != null && status >= 400 && status < 500) {
     return;
   }
@@ -40,5 +59,6 @@ export function captureClientException(
   source: string,
   extra?: SentryContext
 ): void {
+  if (isExpectedUserError(error)) return;
   captureException(error, { source, runtime: "browser", ...extra });
 }

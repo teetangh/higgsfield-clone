@@ -367,12 +367,12 @@ export function StudioPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0a0a] text-white">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#0a0a0a] text-white">
       <TopNav />
 
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {error && (
-          <div className="mx-4 mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+          <div className="mx-4 mt-3 shrink-0 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
@@ -390,27 +390,27 @@ export function StudioPage() {
             onDetails={handleDetails}
           />
         </ErrorBoundary>
-
-        <div className="shrink-0 p-4 pt-0">
-          <PromptDock
-            prompt={prompt}
-            model={model}
-            size={size}
-            batchSize={batchSize}
-            references={references}
-            isLoading={isGenerating}
-            elapsedSeconds={generateElapsed}
-            remainingBudgetUsd={remainingBudgetUsd}
-            onPromptChange={setPrompt}
-            onModelChange={handleModelChange}
-            onSizeChange={setSize}
-            onBatchSizeChange={setBatchSize}
-            onReferencesChange={setReferences}
-            onGenerate={handleGenerate}
-            onCancel={handleCancelGenerate}
-          />
-        </div>
       </main>
+
+      <div className="shrink-0 border-t border-white/10 bg-[#0a0a0a]/95 p-4 backdrop-blur-sm">
+        <PromptDock
+          prompt={prompt}
+          model={model}
+          size={size}
+          batchSize={batchSize}
+          references={references}
+          isLoading={isGenerating}
+          elapsedSeconds={generateElapsed}
+          remainingBudgetUsd={remainingBudgetUsd}
+          onPromptChange={setPrompt}
+          onModelChange={handleModelChange}
+          onSizeChange={setSize}
+          onBatchSizeChange={setBatchSize}
+          onReferencesChange={setReferences}
+          onGenerate={handleGenerate}
+          onCancel={handleCancelGenerate}
+        />
+      </div>
 
       {selectedGeneration && (
         <GenerationDetailPanel

@@ -15,8 +15,8 @@ interface PromptDockProps {
   size: string;
   batchSize: number;
   references: ReferenceFile[];
-  isLoading: boolean;
-  elapsedSeconds: number;
+  isSubmitting: boolean;
+  activeJobCount: number;
   remainingBudgetUsd: number | null;
   onPromptChange: (prompt: string) => void;
   onModelChange: (model: ModelKey) => void;
@@ -24,7 +24,6 @@ interface PromptDockProps {
   onBatchSizeChange: (batchSize: number) => void;
   onReferencesChange: (refs: ReferenceFile[]) => void;
   onGenerate: (confirmBatch?: boolean) => void;
-  onCancel?: () => void;
 }
 
 export function PromptDock({
@@ -33,8 +32,8 @@ export function PromptDock({
   size,
   batchSize,
   references,
-  isLoading,
-  elapsedSeconds,
+  isSubmitting,
+  activeJobCount,
   remainingBudgetUsd,
   onPromptChange,
   onModelChange,
@@ -42,7 +41,6 @@ export function PromptDock({
   onBatchSizeChange,
   onReferencesChange,
   onGenerate,
-  onCancel,
 }: PromptDockProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const costLabel = formatCostEstimate(model, size, batchSize);
@@ -71,27 +69,23 @@ export function PromptDock({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !isLoading) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !isSubmitting) {
         e.preventDefault();
         onGenerate();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isLoading, onGenerate]);
+  }, [isSubmitting, onGenerate]);
 
-  const generateLabel = isLoading
-    ? elapsedSeconds > 0
-      ? `Generating… ${elapsedSeconds}s`
-      : "Generating…"
-    : "Generate";
+  const generateLabel = isSubmitting ? "Starting…" : "Generate";
 
   return (
     <div className="shrink-0 space-y-3 rounded-2xl border border-white/10 bg-neutral-950/80 p-4 backdrop-blur-sm">
-      {isLoading && (
+      {activeJobCount > 0 && (
         <p className="text-xs text-yellow-400/70">
-          Seedream can take 30–120s per request{batchSize > 1 ? ` (${batchSize} images)` : ""}.
-          Larger sizes and batches take longer.
+          {activeJobCount} generation{activeJobCount === 1 ? "" : "s"} running in the background.
+          You can refresh, browse, or start more — processing continues on the server.
         </p>
       )}
 
@@ -99,7 +93,7 @@ export function PromptDock({
         references={references}
         onAdd={handleAddReferences}
         onRemove={handleRemoveReference}
-        disabled={isLoading}
+        disabled={isSubmitting}
       />
 
       <div className="flex gap-3">
@@ -108,7 +102,7 @@ export function PromptDock({
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           placeholder="Describe your image..."
-          disabled={isLoading}
+          disabled={isSubmitting}
           rows={3}
           className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-yellow-400/40 disabled:opacity-50"
         />
@@ -116,20 +110,11 @@ export function PromptDock({
           <button
             type="button"
             onClick={() => onGenerate()}
-            disabled={isLoading || !prompt.trim()}
+            disabled={isSubmitting || !prompt.trim()}
             className="rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-black transition-opacity hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {generateLabel}
           </button>
-          {isLoading && onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-xl border border-white/10 px-6 py-2 text-xs text-white/60 hover:text-white"
-            >
-              Cancel
-            </button>
-          )}
         </div>
       </div>
 
@@ -140,12 +125,12 @@ export function PromptDock({
             size={size}
             onModelChange={onModelChange}
             onSizeChange={onSizeChange}
-            disabled={isLoading}
+            disabled={isSubmitting}
           />
           <select
             value={batchSize}
             onChange={(e) => onBatchSizeChange(parseInt(e.target.value, 10))}
-            disabled={isLoading}
+            disabled={isSubmitting}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-yellow-400/50 disabled:opacity-50"
             aria-label="Batch size"
           >

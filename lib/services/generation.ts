@@ -77,6 +77,34 @@ export function serializeGeneration(
   };
 }
 
+export function toGalleryPlaceholder(
+  gen: {
+    id: string;
+    prompt: string;
+    model: string;
+    size: string;
+    batchSize: number;
+    status: string;
+    createdAt: Date;
+  }
+): GalleryItem | null {
+  if (gen.status !== "pending" && gen.status !== "processing") return null;
+
+  return {
+    id: `pending-${gen.id}`,
+    generationId: gen.id,
+    prompt: gen.prompt,
+    model: gen.model,
+    size: gen.size,
+    batchSize: gen.batchSize,
+    status: gen.status,
+    imageUrl: "",
+    thumbUrl: "",
+    isPending: true,
+    createdAt: gen.createdAt.toISOString(),
+  };
+}
+
 export function toGalleryItem(
   gen: {
     id: string;
@@ -99,7 +127,7 @@ export function toGalleryItem(
     .filter((img) => img.type === "output")
     .sort((a, b) => (a.batchIndex ?? 0) - (b.batchIndex ?? 0))[0];
 
-  if (!output) return null;
+  if (!output) return toGalleryPlaceholder(gen);
 
   return {
     id: output.id,
@@ -117,9 +145,54 @@ export function toGalleryItem(
   };
 }
 
-export async function runGeneration(
+export function toGalleryItemsFromGeneration(gen: {
+  id: string;
+  prompt: string;
+  model: string;
+  size: string;
+  batchSize: number;
+  status: string;
+  createdAt: Date | string;
+  images: Array<{
+    id: string;
+    type: string;
+    batchIndex: number | null;
+    width?: number | null;
+    height?: number | null;
+  }>;
+}): GalleryItem[] {
+  const createdAt =
+    gen.createdAt instanceof Date ? gen.createdAt.toISOString() : gen.createdAt;
+
+  const outputs = gen.images
+    .filter((img) => img.type === "output")
+    .sort((a, b) => (a.batchIndex ?? 0) - (b.batchIndex ?? 0));
+
+  if (outputs.length === 0) {
+    const placeholder = toGalleryPlaceholder({ ...gen, createdAt: new Date(createdAt) });
+    return placeholder ? [placeholder] : [];
+  }
+
+  return outputs.map((output) => ({
+    id: output.id,
+    generationId: gen.id,
+    prompt: gen.prompt,
+    model: gen.model,
+    size: gen.size,
+    batchSize: gen.batchSize,
+    status: gen.status,
+    imageUrl: imageUrl(output.id),
+    thumbUrl: imageUrl(output.id, true),
+    imageWidth: output.width,
+    imageHeight: output.height,
+    createdAt,
+  }));
+}
+
+/** Create a pending generation record and persist references. Returns immediately. */
+export async function startGeneration(
   input: GenerateImageInput
-): Promise<GenerateImageOutput> {
+): Promise<{ id: string; status: string; createdAt: Date }> {
   if (!isValidModel(input.model)) {
     throw new Error("Invalid model selected.");
   }
@@ -162,48 +235,78 @@ export async function runGeneration(
     },
   });
 
-  try {
-    for (let i = 0; i < input.references.length; i++) {
-      const ref = input.references[i];
-      const { relativePath } = await saveReference(
-        generation.id,
-        ref.buffer,
-        ref.mimeType,
-        i,
-        ref.originalName
-      );
-      referencePaths.push(relativePath);
+  for (let i = 0; i < input.references.length; i++) {
+    const ref = input.references[i];
+    const { relativePath } = await saveReference(
+      generation.id,
+      ref.buffer,
+      ref.mimeType,
+      i,
+      ref.originalName
+    );
+    referencePaths.push(relativePath);
 
-      await prisma.image.create({
-        data: {
-          generationId: generation.id,
-          type: "reference",
-          relativePath,
-          mimeType: ref.mimeType,
-          sortOrder: i,
-        },
-      });
-    }
-
-    settingsSnapshot.referencePaths = referencePaths;
-    await prisma.generation.update({
-      where: { id: generation.id },
-      data: { settingsSnapshot: JSON.stringify(settingsSnapshot) },
+    await prisma.image.create({
+      data: {
+        generationId: generation.id,
+        type: "reference",
+        relativePath,
+        mimeType: ref.mimeType,
+        sortOrder: i,
+      },
     });
+  }
+
+  settingsSnapshot.referencePaths = referencePaths;
+  await prisma.generation.update({
+    where: { id: generation.id },
+    data: { settingsSnapshot: JSON.stringify(settingsSnapshot) },
+  });
+
+  return {
+    id: generation.id,
+    status: "pending",
+    createdAt: generation.createdAt,
+  };
+}
+
+/** Run the provider call and persist outputs. Safe to run in the background via after(). */
+export async function processGenerationJob(generationId: string): Promise<void> {
+  const generation = await prisma.generation.findUnique({
+    where: { id: generationId },
+    include: {
+      images: { orderBy: [{ type: "asc" }, { sortOrder: "asc" }] },
+    },
+  });
+
+  if (!generation || generation.status !== "pending") return;
+
+  await prisma.generation.update({
+    where: { id: generationId },
+    data: { status: "processing" },
+  });
+
+  const modelKey = generation.model as ModelKey;
+  const estimatedCostUsd =
+    generation.estimatedCostUsd ??
+    estimateTotalUsd(modelKey, generation.size, generation.batchSize);
+
+  try {
+    const referenceImages = generation.images.filter((img) => img.type === "reference");
+    const referenceBuffers = await Promise.all(
+      referenceImages.map((img) =>
+        readImageFile(img.relativePath, "reference", generation.id)
+      )
+    );
 
     const result = await generateImage({
       modelKey,
-      prompt: input.prompt,
-      size: input.size,
-      batchSize: input.batchSize,
-      referenceImages:
-        input.references.length > 0
-          ? input.references.map((r) => r.buffer)
-          : undefined,
+      prompt: generation.prompt,
+      size: generation.size,
+      batchSize: generation.batchSize,
+      referenceImages: referenceBuffers.length > 0 ? referenceBuffers : undefined,
       referenceMimeTypes:
-        input.references.length > 0
-          ? input.references.map((r) => r.mimeType)
-          : undefined,
+        referenceImages.length > 0 ? referenceImages.map((img) => img.mimeType) : undefined,
     });
 
     if (!result.data?.length) {
@@ -218,11 +321,7 @@ export async function runGeneration(
       let outputBuffer: Buffer | null = null;
 
       if (outputData.url) {
-        const downloaded = await downloadImageToStorage(
-          outputData.url,
-          generation.id,
-          i
-        );
+        const downloaded = await downloadImageToStorage(outputData.url, generation.id, i);
         relativePath = downloaded.relativePath;
         outputMimeType = downloaded.mimeType;
         outputBuffer = await readImageFile(relativePath, "output", generation.id);
@@ -250,12 +349,7 @@ export async function runGeneration(
         },
       });
 
-      outputImages.push({
-        id: outputImage.id,
-        url: imageUrl(outputImage.id),
-        thumbUrl: imageUrl(outputImage.id, true),
-        batchIndex: i,
-      });
+      outputImages.push(outputImage);
     }
 
     if (outputImages.length === 0) {
@@ -267,44 +361,50 @@ export async function runGeneration(
       data: { status: "completed", actualCostUsd: estimatedCostUsd },
     });
 
-    await logUsage(generation.id, input.model, outputImages.length, estimatedCostUsd);
-
-    const referenceImages = await prisma.image.findMany({
-      where: { generationId: generation.id, type: "reference" },
-      orderBy: { sortOrder: "asc" },
-    });
-
-    return {
-      id: generation.id,
-      prompt: generation.prompt,
-      model: generation.model,
-      size: generation.size,
-      batchSize: generation.batchSize,
-      status: "completed",
-      outputImage: outputImages[0] ?? null,
-      outputImages,
-      referenceImages: referenceImages.map((img) => ({
-        id: img.id,
-        url: imageUrl(img.id),
-        thumbUrl: imageUrl(img.id, true),
-      })),
-      estimatedCostUsd,
-      createdAt: generation.createdAt,
-    };
+    await logUsage(generation.id, generation.model, outputImages.length, estimatedCostUsd);
   } catch (error) {
     const message = mapProviderError(error);
     captureException(error, {
-      service: "runGeneration",
+      service: "processGenerationJob",
       generationId: generation.id,
-      model: input.model,
-      batchSize: input.batchSize,
+      model: generation.model,
+      batchSize: generation.batchSize,
     });
     await prisma.generation.update({
       where: { id: generation.id },
       data: { status: "failed", error: message },
     });
-    throw new Error(message);
   }
+}
+
+/** Legacy synchronous path — kept for tests; API uses start + process. */
+export async function runGeneration(
+  input: GenerateImageInput
+): Promise<GenerateImageOutput> {
+  const started = await startGeneration(input);
+  await processGenerationJob(started.id);
+
+  const generation = await prisma.generation.findUnique({
+    where: { id: started.id },
+    include: {
+      images: { orderBy: [{ type: "asc" }, { batchIndex: "asc" }, { sortOrder: "asc" }] },
+    },
+  });
+
+  if (!generation) {
+    throw new Error("Generation not found after processing.");
+  }
+
+  if (generation.status === "failed") {
+    throw new Error(generation.error ?? "Generation failed.");
+  }
+
+  const serialized = serializeGeneration(generation);
+  return {
+    ...serialized,
+    estimatedCostUsd: generation.estimatedCostUsd ?? 0,
+    createdAt: generation.createdAt,
+  };
 }
 
 export { MAX_FILE_SIZE_BYTES };

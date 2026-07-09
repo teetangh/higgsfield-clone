@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { isValidModel } from "@/lib/providers";
 import { captureRouteException, sentryRoute } from "@/lib/sentry";
 import {
@@ -7,7 +8,8 @@ import {
 } from "@/lib/services/cost-estimator";
 import {
   MAX_FILE_SIZE_BYTES,
-  runGeneration,
+  processGenerationJob,
+  startGeneration,
 } from "@/lib/services/generation";
 import { MAX_REFERENCE_IMAGES, MAX_TOTAL_IMAGES } from "@/lib/storage";
 import type { ModelKey } from "@/lib/types";
@@ -94,7 +96,7 @@ async function postHandler(request: NextRequest) {
       }))
     );
 
-    const result = await runGeneration({
+    const started = await startGeneration({
       prompt,
       model,
       size,
@@ -102,10 +104,23 @@ async function postHandler(request: NextRequest) {
       references,
     });
 
-    return NextResponse.json({
-      ...result,
-      createdAt: result.createdAt.toISOString(),
+    after(async () => {
+      await processGenerationJob(started.id);
     });
+
+    return NextResponse.json(
+      {
+        id: started.id,
+        prompt,
+        model,
+        size,
+        batchSize: batchSizeRaw,
+        status: started.status,
+        accepted: true,
+        createdAt: started.createdAt.toISOString(),
+      },
+      { status: 202 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed.";
     const status =

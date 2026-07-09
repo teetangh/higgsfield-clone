@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReferenceFile } from "@/lib/types";
 
 interface ReferenceImageStripProps {
@@ -18,6 +19,46 @@ export function ReferenceImageStrip({
   disabled,
   maxImages = 10,
 }: ReferenceImageStripProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [pasteFlash, setPasteFlash] = useState<"in" | "out" | null>(null);
+
+  const triggerPasteFlash = useCallback(() => {
+    setPasteFlash("in");
+    window.setTimeout(() => setPasteFlash("out"), 700);
+    window.setTimeout(() => setPasteFlash(null), 1100);
+  }, []);
+
+  const handlePaste = useCallback(
+    (event: ClipboardEvent) => {
+      if (disabled || references.length >= maxImages) return;
+
+      const items = event.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (!item.type.startsWith("image/")) continue;
+
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        event.preventDefault();
+        const ext = file.type.split("/")[1] ?? "png";
+        const namedFile = new File([file], `pasted-${Date.now()}.${ext}`, {
+          type: file.type,
+        });
+        onAdd([namedFile]);
+        triggerPasteFlash();
+        break;
+      }
+    },
+    [disabled, maxImages, onAdd, references.length, triggerPasteFlash]
+  );
+
+  useEffect(() => {
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [handlePaste]);
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (disabled) return;
@@ -35,10 +76,24 @@ export function ReferenceImageStrip({
 
   return (
     <div
-      className="flex items-center gap-2 overflow-x-auto pb-1"
+      ref={containerRef}
+      tabIndex={0}
+      className="relative flex items-center gap-2 overflow-x-auto rounded-xl pb-1 outline-none focus-visible:ring-1 focus-visible:ring-yellow-400/40"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
+      {pasteFlash && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border border-yellow-400/30 bg-yellow-400/10 backdrop-blur-[2px] ${
+            pasteFlash === "in" ? "animate-paste-flash-in" : "animate-paste-flash-out"
+          }`}
+        >
+          <span className="rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-yellow-300">
+            Image pasted
+          </span>
+        </div>
+      )}
+
       {references.map((ref, index) => (
         <div
           key={ref.previewUrl}
@@ -82,7 +137,7 @@ export function ReferenceImageStrip({
 
       {references.length === 0 && (
         <span className="text-xs text-white/30">
-          Drop reference images here (up to {maxImages})
+          Paste, drop, or add reference images (up to {maxImages})
         </span>
       )}
     </div>

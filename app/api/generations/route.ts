@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
 import { captureRouteException, sentryRoute } from "@/lib/sentry";
-import { serializeGeneration, toGalleryItem } from "@/lib/services/generation";
+import {
+  serializeGeneration,
+  toGalleryItemsFromGeneration,
+} from "@/lib/services/generation";
 
 export const runtime = "nodejs";
 
@@ -26,10 +29,7 @@ async function getHandler(request: NextRequest) {
     const nextCursor = hasMore ? page[page.length - 1]?.id ?? null : null;
 
     if (view === "gallery") {
-      const items = page
-        .map((gen) => toGalleryItem(gen))
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
+      const items = page.flatMap((gen) => toGalleryItemsFromGeneration(gen));
       return NextResponse.json({ items, nextCursor, hasMore });
     }
 

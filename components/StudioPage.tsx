@@ -8,13 +8,13 @@ import { ImageZoomModal } from "@/components/ImageZoomModal";
 import { PromptDock } from "@/components/PromptDock";
 import { TopNav } from "@/components/TopNav";
 import { useStudio } from "@/components/StudioProvider";
+import { useGenerationPoller } from "@/lib/hooks/useGenerationPoller";
 import { getDefaultSizeForModel } from "@/lib/config/models";
 import { captureClientException } from "@/lib/sentry";
 import { showConfirmToast, showUserError, showUserInfo, showUserSuccess } from "@/lib/toast";
 import type {
   GalleryItem,
   GenerationResult,
-  ImageRef,
   ReferenceFile,
   RestorePayload,
   ModelKey,
@@ -28,7 +28,7 @@ async function urlToReferenceFile(url: string, index: number): Promise<Reference
   return { file, previewUrl: URL.createObjectURL(file) };
 }
 
-function toGalleryItemsFromResponse(data: {
+function placeholderFromStart(data: {
   id: string;
   prompt: string;
   model: string;
@@ -36,27 +36,20 @@ function toGalleryItemsFromResponse(data: {
   batchSize: number;
   status: string;
   createdAt: string;
-  outputImage: ImageRef | null;
-  outputImages?: ImageRef[];
-}): GalleryItem[] {
-  const outputs = data.outputImages?.length
-    ? data.outputImages
-    : data.outputImage
-      ? [data.outputImage]
-      : [];
-
-  return outputs.map((img) => ({
-    id: img.id,
+}): GalleryItem {
+  return {
+    id: `pending-${data.id}`,
     generationId: data.id,
     prompt: data.prompt,
     model: data.model,
     size: data.size,
     batchSize: data.batchSize,
     status: data.status,
-    imageUrl: img.url,
-    thumbUrl: img.thumbUrl ?? `${img.url}?w=400`,
+    imageUrl: "",
+    thumbUrl: "",
+    isPending: true,
     createdAt: data.createdAt,
-  }));
+  };
 }
 
 export function StudioPage() {
@@ -82,8 +75,7 @@ export function StudioPage() {
     hydrated,
   } = studio;
 
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generateElapsed, setGenerateElapsed] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingBudgetUsd, setRemainingBudgetUsd] = useState<number | null>(null);
 
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -94,8 +86,27 @@ export function StudioPage() {
   const [isDeletingGeneration, setIsDeletingGeneration] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
-  const generateStartedAtRef = useRef<number | null>(null);
   const galleryInitializedRef = useRef(false);
+
+  const loadBudget = useCallback(async () => {
+    try {
+      const res = await fetch("/api/profile/usage");
+      const text = await res.text();
+      if (!text) return;
+      const data = JSON.parse(text);
+      if (res.ok) {
+        setRemainingBudgetUsd(data.usage.remainingBudgetUsd);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const { trackGeneration, activeCount } = useGenerationPoller({
+    enabled: hydrated,
+    setGalleryItems,
+    onBudgetRefresh: loadBudget,
+  });
 
   const loadGallery = useCallback(
     async (cursor?: string | null, append = false) => {
@@ -127,20 +138,6 @@ export function StudioPage() {
     [setGalleryItems]
   );
 
-  const loadBudget = useCallback(async () => {
-    try {
-      const res = await fetch("/api/profile/usage");
-      const text = await res.text();
-      if (!text) return;
-      const data = JSON.parse(text);
-      if (res.ok) {
-        setRemainingBudgetUsd(data.usage.remainingBudgetUsd);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const loadGenerationById = useCallback(
     async (id: string): Promise<GenerationResult | null> => {
       try {
@@ -171,23 +168,6 @@ export function StudioPage() {
       if (gen) setSelectedGeneration(gen);
     });
   }, [selectedGenerationId, selectedGeneration, loadGenerationById, setSelectedGeneration]);
-
-  useEffect(() => {
-    if (!isGenerating) {
-      setGenerateElapsed(0);
-      generateStartedAtRef.current = null;
-      return;
-    }
-
-    generateStartedAtRef.current = Date.now();
-    const interval = window.setInterval(() => {
-      if (generateStartedAtRef.current) {
-        setGenerateElapsed(Math.floor((Date.now() - generateStartedAtRef.current) / 1000));
-      }
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [isGenerating]);
 
   const handleModelChange = useCallback(
     (newModel: ModelKey) => {
@@ -235,12 +215,6 @@ export function StudioPage() {
     setSelectedGenerationId(null);
   }, [setSelectedGeneration, setSelectedGenerationId]);
 
-  const handleCancelGenerate = useCallback(() => {
-    abortRef.current?.abort();
-    setIsGenerating(false);
-    showUserInfo("Generation cancelled.");
-  }, []);
-
   const handleGenerate = useCallback(
     async (confirmBatch = false, overrides?: RestorePayload) => {
       const activePrompt = overrides?.prompt ?? prompt;
@@ -253,9 +227,9 @@ export function StudioPage() {
           )
         : references;
 
-      if (!activePrompt.trim() || isGenerating) return;
+      if (!activePrompt.trim() || isSubmitting) return;
 
-      setIsGenerating(true);
+      setIsSubmitting(true);
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
@@ -280,7 +254,6 @@ export function StudioPage() {
         const data = text ? JSON.parse(text) : {};
 
         if (response.status === 409 && data.error === "confirmation_required") {
-          setIsGenerating(false);
           showConfirmToast(data.message, {
             confirmLabel: "Continue",
             cancelLabel: "Cancel",
@@ -295,31 +268,24 @@ export function StudioPage() {
           throw new Error(data.error ?? "Generation failed.");
         }
 
-        const newItems = toGalleryItemsFromResponse(data);
-        if (newItems.length > 0) {
-          setGalleryItems((prev) => {
-            const seen = new Set(newItems.map((item) => item.id));
-            return [...newItems, ...prev.filter((item) => !seen.has(item.id))];
-          });
-        }
-
-        setIsGenerating(false);
+        const placeholder = placeholderFromStart(data);
+        setGalleryItems((prev) => [placeholder, ...prev.filter((item) => item.generationId !== data.id)]);
+        trackGeneration(data.id);
+        showUserInfo("Generation started in the background.");
 
         if (overrides) {
           await applyRestore(overrides);
         }
 
         handleCloseDetails();
-        void loadBudget();
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
-          showUserInfo("Generation cancelled.");
           return;
         }
         captureClientException(err, "StudioPage.handleGenerate");
         showUserError(err);
       } finally {
-        setIsGenerating(false);
+        setIsSubmitting(false);
         if (overrides) {
           activeReferences.forEach((r) => URL.revokeObjectURL(r.previewUrl));
         }
@@ -331,12 +297,11 @@ export function StudioPage() {
       size,
       batchSize,
       references,
-      isGenerating,
-      loadGallery,
-      loadBudget,
+      isSubmitting,
       applyRestore,
       setGalleryItems,
       handleCloseDetails,
+      trackGeneration,
     ]
   );
 
@@ -431,8 +396,8 @@ export function StudioPage() {
           size={size}
           batchSize={batchSize}
           references={references}
-          isLoading={isGenerating}
-          elapsedSeconds={generateElapsed}
+          isSubmitting={isSubmitting}
+          activeJobCount={activeCount}
           remainingBudgetUsd={remainingBudgetUsd}
           onPromptChange={setPrompt}
           onModelChange={handleModelChange}
@@ -440,7 +405,6 @@ export function StudioPage() {
           onBatchSizeChange={setBatchSize}
           onReferencesChange={setReferences}
           onGenerate={handleGenerate}
-          onCancel={handleCancelGenerate}
         />
       </div>
 

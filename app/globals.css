@@ -24,3 +24,33 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
+
+@keyframes paste-flash-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes paste-flash-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+.animate-paste-flash-in {
+  animation: paste-flash-in 0.25s ease-out forwards;
+}
+
+.animate-paste-flash-out {
+  animation: paste-flash-out 0.4s ease-in forwards;
+}

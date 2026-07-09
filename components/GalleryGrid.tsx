@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getGalleryImageDimensions } from "@/lib/studio/size";
 import type { GalleryItem } from "@/lib/types";
 
 interface GalleryGridProps {
@@ -20,6 +21,29 @@ const COLUMN_CLASSES: Record<number, string> = {
   6: "columns-6",
 };
 
+function PendingGalleryTile({ item }: { item: GalleryItem }) {
+  const { width, height } = getGalleryImageDimensions(item.size);
+  const aspectRatio = width / height;
+
+  return (
+    <div className="mb-3 break-inside-avoid">
+      <div
+        className="relative w-full overflow-hidden rounded-xl border border-yellow-400/20 bg-white/5"
+        style={{ aspectRatio }}
+      >
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/5 via-yellow-400/10 to-white/5" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-yellow-400/30 border-t-yellow-400" />
+          <p className="text-xs text-yellow-400/80">
+            {item.status === "processing" ? "Generating…" : "Queued…"}
+          </p>
+          <p className="line-clamp-2 text-[10px] text-white/40">{item.prompt}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GalleryTile({
   item,
   onImageClick,
@@ -27,6 +51,10 @@ function GalleryTile({
   item: GalleryItem;
   onImageClick: (item: GalleryItem) => void;
 }) {
+  if (item.isPending) {
+    return <PendingGalleryTile item={item} />;
+  }
+
   return (
     <div className="mb-3 break-inside-avoid">
       <div className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30">

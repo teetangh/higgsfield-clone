@@ -32,6 +32,7 @@ export interface GalleryItem {
   thumbUrl: string;
   imageWidth?: number | null;
   imageHeight?: number | null;
+  isPending?: boolean;
   createdAt: string;
 }
 

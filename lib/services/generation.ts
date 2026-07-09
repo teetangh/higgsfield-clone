@@ -5,6 +5,7 @@ import {
   isValidModel,
   mapProviderError,
 } from "@/lib/providers";
+import { captureException } from "@/lib/sentry";
 import { estimateTotalUsd } from "@/lib/services/cost-estimator";
 import { checkBudgetAllowed, logUsage } from "@/lib/services/profile.service";
 import {
@@ -276,6 +277,12 @@ export async function runGeneration(
     };
   } catch (error) {
     const message = mapProviderError(error);
+    captureException(error, {
+      service: "runGeneration",
+      generationId: generation.id,
+      model: input.model,
+      batchSize: input.batchSize,
+    });
     await prisma.generation.update({
       where: { id: generation.id },
       data: { status: "failed", error: message },

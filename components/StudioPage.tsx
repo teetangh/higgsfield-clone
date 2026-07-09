@@ -8,6 +8,7 @@ import { ImageZoomModal } from "@/components/ImageZoomModal";
 import { PromptDock } from "@/components/PromptDock";
 import { TopNav } from "@/components/TopNav";
 import { getDefaultSizeForModel } from "@/lib/config/models";
+import { captureClientException } from "@/lib/sentry";
 import type {
   GalleryItem,
   GenerationResult,
@@ -92,7 +93,8 @@ export function StudioPage() {
       setGalleryItems((prev) => (append ? [...prev, ...data.items] : data.items));
       setNextCursor(data.nextCursor);
       setHasMore(data.hasMore);
-    } catch {
+    } catch (err) {
+      captureClientException(err, "StudioPage.loadGallery");
       // ignore gallery refresh errors
     } finally {
       setIsLoadingGallery(false);
@@ -253,6 +255,7 @@ export function StudioPage() {
           setError("Generation cancelled.");
           return;
         }
+        captureClientException(err, "StudioPage.handleGenerate");
         setError(err instanceof Error ? err.message : "Generation failed.");
       } finally {
         setIsGenerating(false);
@@ -273,7 +276,8 @@ export function StudioPage() {
         const data: RestorePayload = JSON.parse(text);
         await applyRestore(data);
         setSelectedGeneration(null);
-      } catch {
+      } catch (err) {
+        captureClientException(err, "StudioPage.handleReuse");
         setError("Failed to restore settings.");
       }
     },
@@ -289,7 +293,8 @@ export function StudioPage() {
         const data: RestorePayload = JSON.parse(text);
         setSelectedGeneration(null);
         await handleGenerate(false, data);
-      } catch {
+      } catch (err) {
+        captureClientException(err, "StudioPage.handleRegenerate");
         setError("Failed to regenerate.");
       }
     },

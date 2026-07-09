@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TopNav } from "@/components/TopNav";
+import { captureClientException } from "@/lib/sentry";
 
 interface ProfileData {
   displayName: string;
@@ -42,7 +43,8 @@ export function ProfilePage() {
       } else {
         setMessage(data.error ?? "Failed to load profile.");
       }
-    } catch {
+    } catch (err) {
+      captureClientException(err, "ProfilePage.load");
       setMessage("Failed to load profile data.");
     }
   }, []);
@@ -67,6 +69,7 @@ export function ProfilePage() {
       } else {
         const data = await res.json();
         setMessage(data.error ?? "Failed to save.");
+        captureClientException(new Error(data.error ?? "Failed to save profile."), "ProfilePage.handleSave");
       }
     } finally {
       setSaving(false);

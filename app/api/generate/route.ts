@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isValidModel } from "@/lib/providers";
+import { captureRouteException, sentryRoute } from "@/lib/sentry";
 import {
   isValidBatchSize,
   estimateTotalUsd,
@@ -14,7 +15,7 @@ import type { ModelKey } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   try {
     const formData = await request.formData();
     const prompt = (formData.get("prompt") as string | null)?.trim();
@@ -114,6 +115,14 @@ export async function POST(request: NextRequest) {
       message.includes("Budget")
         ? 400
         : 502;
+
+    captureRouteException(error, "POST /api/generate", status);
+
     return NextResponse.json({ error: message }, { status });
   }
 }
+
+export const POST = sentryRoute(postHandler, {
+  method: "POST",
+  parameterizedRoute: "/api/generate",
+});

@@ -10,8 +10,7 @@ interface GalleryGridProps {
   isLoading: boolean;
   gridColumns: number;
   onLoadMore: () => void;
-  onPreview: (item: GalleryItem) => void;
-  onDetails: (item: GalleryItem) => void;
+  onImageClick: (item: GalleryItem) => void;
 }
 
 const COLUMN_CLASSES: Record<number, string> = {
@@ -28,8 +27,7 @@ export function GalleryGrid({
   isLoading,
   gridColumns,
   onLoadMore,
-  onPreview,
-  onDetails,
+  onImageClick,
 }: GalleryGridProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const columnClass = COLUMN_CLASSES[gridColumns] ?? "columns-4";
@@ -72,7 +70,7 @@ export function GalleryGrid({
             <div className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30">
               <button
                 type="button"
-                onClick={() => onPreview(item)}
+                onClick={() => onImageClick(item)}
                 className="block w-full"
                 aria-label={`Preview: ${item.prompt}`}
               >
@@ -91,7 +89,7 @@ export function GalleryGrid({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDetails(item);
+                  onImageClick(item);
                 }}
                 className="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/80 opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
                 aria-label="View generation details"

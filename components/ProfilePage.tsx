@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { TopNav } from "@/components/TopNav";
 import { captureClientException } from "@/lib/sentry";
+import { showUserError, showUserSuccess } from "@/lib/toast";
 
 interface ProfileData {
   displayName: string;
@@ -24,14 +25,16 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/profile/usage");
       const text = await res.text();
       if (!text) {
-        setMessage("Profile API returned an empty response.");
+        const msg = "Profile API returned an empty response.";
+        setLoadError(msg);
+        showUserError(msg);
         return;
       }
 
@@ -39,13 +42,17 @@ export function ProfilePage() {
       if (res.ok) {
         setProfile(data.profile);
         setUsage(data.usage);
-        setMessage(null);
+        setLoadError(null);
       } else {
-        setMessage(data.error ?? "Failed to load profile.");
+        const msg = data.error ?? "Failed to load profile.";
+        setLoadError(msg);
+        showUserError(msg);
       }
     } catch (err) {
       captureClientException(err, "ProfilePage.load");
-      setMessage("Failed to load profile data.");
+      const msg = "Failed to load profile data.";
+      setLoadError(msg);
+      showUserError(msg);
     }
   }, []);
 
@@ -56,7 +63,6 @@ export function ProfilePage() {
   const handleSave = async () => {
     if (!profile) return;
     setSaving(true);
-    setMessage(null);
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
@@ -64,12 +70,13 @@ export function ProfilePage() {
         body: JSON.stringify(profile),
       });
       if (res.ok) {
-        setMessage("Settings saved.");
+        showUserSuccess("Settings saved.");
         await load();
       } else {
         const data = await res.json();
-        setMessage(data.error ?? "Failed to save.");
-        captureClientException(new Error(data.error ?? "Failed to save profile."), "ProfilePage.handleSave");
+        const msg = data.error ?? "Failed to save.";
+        showUserError(msg);
+        captureClientException(new Error(msg), "ProfilePage.handleSave");
       }
     } finally {
       setSaving(false);
@@ -81,8 +88,8 @@ export function ProfilePage() {
       <div className="min-h-screen bg-[#0a0a0a] text-white">
         <TopNav />
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 text-white/40">
-          <p>{message ?? "Loading profile..."}</p>
-          {message && (
+          <p>{loadError ?? "Loading profile..."}</p>
+          {loadError && (
             <button
               type="button"
               onClick={load}
@@ -177,7 +184,6 @@ export function ProfilePage() {
           >
             {saving ? "Saving..." : "Save settings"}
           </button>
-          {message && <p className="text-xs text-white/50">{message}</p>}
         </section>
 
         <section className="space-y-4 rounded-2xl border border-white/10 bg-neutral-950/80 p-6">

@@ -10,6 +10,7 @@ import { TopNav } from "@/components/TopNav";
 import { useStudio } from "@/components/StudioProvider";
 import { getDefaultSizeForModel } from "@/lib/config/models";
 import { captureClientException } from "@/lib/sentry";
+import { showUserError, showUserInfo } from "@/lib/toast";
 import type {
   GalleryItem,
   GenerationResult,
@@ -78,11 +79,11 @@ export function StudioPage() {
     setSelectedGeneration,
     selectedGenerationId,
     setSelectedGenerationId,
+    hydrated,
   } = studio;
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateElapsed, setGenerateElapsed] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [remainingBudgetUsd, setRemainingBudgetUsd] = useState<number | null>(null);
 
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -93,6 +94,7 @@ export function StudioPage() {
 
   const abortRef = useRef<AbortController | null>(null);
   const generateStartedAtRef = useRef<number | null>(null);
+  const galleryInitializedRef = useRef(false);
 
   const loadGallery = useCallback(
     async (cursor?: string | null, append = false) => {
@@ -106,7 +108,13 @@ export function StudioPage() {
         if (!text || !res.ok) return;
 
         const data = JSON.parse(text);
-        setGalleryItems((prev) => (append ? [...prev, ...data.items] : data.items));
+        setGalleryItems((prev) => {
+          if (append) return [...prev, ...data.items];
+          if (prev.length === 0) return data.items;
+          const seen = new Set(data.items.map((item: GalleryItem) => item.id));
+          const extras = prev.filter((item) => !seen.has(item.id));
+          return [...data.items, ...extras];
+        });
         setNextCursor(data.nextCursor);
         setHasMore(data.hasMore);
       } catch (err) {
@@ -147,11 +155,14 @@ export function StudioPage() {
   );
 
   useEffect(() => {
+    if (!hydrated) return;
     void loadBudget();
+    if (galleryInitializedRef.current) return;
+    galleryInitializedRef.current = true;
     if (galleryItems.length === 0) {
       void loadGallery();
     }
-  }, [loadGallery, loadBudget, galleryItems.length]);
+  }, [hydrated, loadGallery, loadBudget, galleryItems.length]);
 
   useEffect(() => {
     if (!selectedGenerationId || selectedGeneration) return;
@@ -202,8 +213,9 @@ export function StudioPage() {
     [references, setPrompt, setModel, setSize, setBatchSize, setReferences]
   );
 
-  const handleDetails = useCallback(
+  const handleImageClick = useCallback(
     async (item: GalleryItem) => {
+      setPreviewItem(item);
       const gen = await loadGenerationById(item.generationId);
       if (gen) {
         setSelectedGeneration(gen);
@@ -212,10 +224,6 @@ export function StudioPage() {
     },
     [loadGenerationById, setSelectedGeneration, setSelectedGenerationId]
   );
-
-  const handlePreview = useCallback((item: GalleryItem) => {
-    setPreviewItem(item);
-  }, []);
 
   const handleClosePreview = useCallback(() => {
     setPreviewItem(null);
@@ -229,7 +237,7 @@ export function StudioPage() {
   const handleCancelGenerate = useCallback(() => {
     abortRef.current?.abort();
     setIsGenerating(false);
-    setError("Generation cancelled.");
+    showUserInfo("Generation cancelled.");
   }, []);
 
   const handleGenerate = useCallback(
@@ -247,7 +255,6 @@ export function StudioPage() {
       if (!activePrompt.trim() || isGenerating) return;
 
       setIsGenerating(true);
-      setError(null);
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
@@ -300,14 +307,13 @@ export function StudioPage() {
 
         handleCloseDetails();
         void loadBudget();
-        void loadGallery();
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
-          setError("Generation cancelled.");
+          showUserInfo("Generation cancelled.");
           return;
         }
         captureClientException(err, "StudioPage.handleGenerate");
-        setError(err instanceof Error ? err.message : "Generation failed.");
+        showUserError(err);
       } finally {
         setIsGenerating(false);
         if (overrides) {
@@ -342,7 +348,7 @@ export function StudioPage() {
         setPreviewItem(null);
       } catch (err) {
         captureClientException(err, "StudioPage.handleReuse");
-        setError("Failed to restore settings.");
+        showUserError("Failed to restore settings.");
       }
     },
     [applyRestore, handleCloseDetails]
@@ -360,7 +366,7 @@ export function StudioPage() {
         await handleGenerate(false, data);
       } catch (err) {
         captureClientException(err, "StudioPage.handleRegenerate");
-        setError("Failed to regenerate.");
+        showUserError("Failed to regenerate.");
       }
     },
     [handleGenerate, handleCloseDetails]
@@ -371,12 +377,6 @@ export function StudioPage() {
       <TopNav />
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {error && (
-          <div className="mx-4 mt-3 shrink-0 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
         <ErrorBoundary>
           <GalleryGrid
             items={galleryItems}
@@ -386,8 +386,7 @@ export function StudioPage() {
             onLoadMore={() => {
               if (nextCursor && !isLoadingGallery) loadGallery(nextCursor, true);
             }}
-            onPreview={handlePreview}
-            onDetails={handleDetails}
+            onImageClick={handleImageClick}
           />
         </ErrorBoundary>
       </main>
@@ -430,9 +429,10 @@ export function StudioPage() {
           imageUrl={previewItem.imageUrl}
           alt={previewItem.prompt}
           prompt={previewItem.prompt}
+          detailsPanelOpen={!!selectedGeneration}
           onClose={handleClosePreview}
           onDetails={() => {
-            void handleDetails(previewItem);
+            void handleImageClick(previewItem);
           }}
         />
       )}

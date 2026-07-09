@@ -21,7 +21,7 @@ export function GenerationDetailPanel({
   if (!generation) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-neutral-950/95 backdrop-blur-md">
+    <div className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-md flex-col border-l border-white/10 bg-neutral-950/95 backdrop-blur-md">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <h2 className="text-sm font-semibold text-white">Generation details</h2>
         <button

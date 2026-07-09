@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types";
 
 const SESSION_KEY = "seedream-studio-session";
+const MAX_PERSISTED_GALLERY_ITEMS = 80;
 
 const DEFAULT_SESSION = {
   prompt: "",
@@ -25,6 +26,7 @@ const DEFAULT_SESSION = {
   batchSize: 1,
   gridColumns: 4,
   selectedGenerationId: null as string | null,
+  galleryItems: [] as GalleryItem[],
 };
 
 interface PersistedSession {
@@ -34,6 +36,7 @@ interface PersistedSession {
   batchSize: number;
   gridColumns: number;
   selectedGenerationId: string | null;
+  galleryItems: GalleryItem[];
 }
 
 interface StudioContextValue {
@@ -64,14 +67,18 @@ function readPersistedSession(): PersistedSession {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) throw new Error("empty");
-    const parsed = JSON.parse(raw) as PersistedSession;
+    const parsed = JSON.parse(raw) as Partial<PersistedSession>;
+    const model = (parsed.model as ModelKey) ?? DEFAULT_SESSION.model;
     return {
       prompt: parsed.prompt ?? DEFAULT_SESSION.prompt,
-      model: (parsed.model as ModelKey) ?? DEFAULT_SESSION.model,
-      size: parsed.size ?? getDefaultSizeForModel((parsed.model as ModelKey) ?? DEFAULT_SESSION.model),
+      model,
+      size: parsed.size ?? getDefaultSizeForModel(model),
       batchSize: parsed.batchSize ?? DEFAULT_SESSION.batchSize,
       gridColumns: Math.min(6, Math.max(2, parsed.gridColumns ?? DEFAULT_SESSION.gridColumns)),
       selectedGenerationId: parsed.selectedGenerationId ?? null,
+      galleryItems: Array.isArray(parsed.galleryItems)
+        ? parsed.galleryItems.slice(0, MAX_PERSISTED_GALLERY_ITEMS)
+        : [],
     };
   } catch {
     return { ...DEFAULT_SESSION };
@@ -98,6 +105,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setBatchSize(persisted.batchSize);
     setGridColumns(persisted.gridColumns);
     setSelectedGenerationId(persisted.selectedGenerationId);
+    setGalleryItems(persisted.galleryItems);
     setHydrated(true);
   }, []);
 
@@ -110,9 +118,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       batchSize,
       gridColumns,
       selectedGenerationId,
+      galleryItems: galleryItems.slice(0, MAX_PERSISTED_GALLERY_ITEMS),
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-  }, [hydrated, prompt, model, size, batchSize, gridColumns, selectedGenerationId]);
+  }, [hydrated, prompt, model, size, batchSize, gridColumns, selectedGenerationId, galleryItems]);
 
   const value = useMemo(
     () => ({

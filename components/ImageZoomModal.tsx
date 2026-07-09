@@ -7,6 +7,7 @@ interface ImageZoomModalProps {
   imageUrl: string;
   alt?: string;
   prompt?: string;
+  detailsPanelOpen?: boolean;
   onClose: () => void;
   onDetails?: () => void;
 }
@@ -15,6 +16,7 @@ export function ImageZoomModal({
   imageUrl,
   alt = "Generated image",
   prompt,
+  detailsPanelOpen = false,
   onClose,
   onDetails,
 }: ImageZoomModalProps) {
@@ -36,7 +38,9 @@ export function ImageZoomModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm"
+      className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm ${
+        detailsPanelOpen ? "right-[28rem]" : "right-0"
+      }`}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -50,7 +54,7 @@ export function ImageZoomModal({
         >
           Close (Esc)
         </button>
-        {onDetails && (
+        {onDetails && !detailsPanelOpen && (
           <button
             type="button"
             onClick={(e) => {

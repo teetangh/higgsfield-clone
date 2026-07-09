@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { StudioProviderWrapper } from "@/components/StudioProviderWrapper";
+import { Toaster } from "@/components/Toaster";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body className="min-h-full">
         <ErrorBoundary>
           <StudioProviderWrapper>{children}</StudioProviderWrapper>
+          <Toaster />
         </ErrorBoundary>
       </body>
     </html>

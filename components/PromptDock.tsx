@@ -16,6 +16,7 @@ interface PromptDockProps {
   batchSize: number;
   references: ReferenceFile[];
   isLoading: boolean;
+  elapsedSeconds: number;
   remainingBudgetUsd: number | null;
   onPromptChange: (prompt: string) => void;
   onModelChange: (model: ModelKey) => void;
@@ -23,6 +24,7 @@ interface PromptDockProps {
   onBatchSizeChange: (batchSize: number) => void;
   onReferencesChange: (refs: ReferenceFile[]) => void;
   onGenerate: (confirmBatch?: boolean) => void;
+  onCancel?: () => void;
 }
 
 export function PromptDock({
@@ -32,6 +34,7 @@ export function PromptDock({
   batchSize,
   references,
   isLoading,
+  elapsedSeconds,
   remainingBudgetUsd,
   onPromptChange,
   onModelChange,
@@ -39,6 +42,7 @@ export function PromptDock({
   onBatchSizeChange,
   onReferencesChange,
   onGenerate,
+  onCancel,
 }: PromptDockProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const costLabel = formatCostEstimate(model, size, batchSize);
@@ -76,8 +80,21 @@ export function PromptDock({
     return () => window.removeEventListener("keydown", handler);
   }, [isLoading, onGenerate]);
 
+  const generateLabel = isLoading
+    ? elapsedSeconds > 0
+      ? `Generating… ${elapsedSeconds}s`
+      : "Generating…"
+    : "Generate";
+
   return (
     <div className="shrink-0 space-y-3 rounded-2xl border border-white/10 bg-neutral-950/80 p-4 backdrop-blur-sm">
+      {isLoading && (
+        <p className="text-xs text-yellow-400/70">
+          Seedream can take 30–120s per request{batchSize > 1 ? ` (${batchSize} images)` : ""}.
+          Larger sizes and batches take longer.
+        </p>
+      )}
+
       <ReferenceImageStrip
         references={references}
         onAdd={handleAddReferences}
@@ -95,14 +112,25 @@ export function PromptDock({
           rows={3}
           className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-yellow-400/40 disabled:opacity-50"
         />
-        <button
-          type="button"
-          onClick={() => onGenerate()}
-          disabled={isLoading || !prompt.trim()}
-          className="shrink-0 self-end rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-black transition-opacity hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {isLoading ? "Generating..." : "Generate"}
-        </button>
+        <div className="flex shrink-0 flex-col gap-2 self-end">
+          <button
+            type="button"
+            onClick={() => onGenerate()}
+            disabled={isLoading || !prompt.trim()}
+            className="rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-black transition-opacity hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {generateLabel}
+          </button>
+          {isLoading && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl border border-white/10 px-6 py-2 text-xs text-white/60 hover:text-white"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

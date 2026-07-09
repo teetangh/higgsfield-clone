@@ -11,6 +11,7 @@ import { getDefaultSizeForModel } from "@/lib/config/models";
 import type {
   GalleryItem,
   GenerationResult,
+  ImageRef,
   ReferenceFile,
   RestorePayload,
   ModelKey,
@@ -24,6 +25,37 @@ async function urlToReferenceFile(url: string, index: number): Promise<Reference
   return { file, previewUrl: URL.createObjectURL(file) };
 }
 
+function toGalleryItemsFromResponse(data: {
+  id: string;
+  prompt: string;
+  model: string;
+  size: string;
+  batchSize: number;
+  status: string;
+  createdAt: string;
+  outputImage: ImageRef | null;
+  outputImages?: ImageRef[];
+}): GalleryItem[] {
+  const outputs = data.outputImages?.length
+    ? data.outputImages
+    : data.outputImage
+      ? [data.outputImage]
+      : [];
+
+  return outputs.map((img) => ({
+    id: img.id,
+    generationId: data.id,
+    prompt: data.prompt,
+    model: data.model,
+    size: data.size,
+    batchSize: data.batchSize,
+    status: data.status,
+    imageUrl: img.url,
+    thumbUrl: img.thumbUrl ?? `${img.url}?w=400`,
+    createdAt: data.createdAt,
+  }));
+}
+
 export function StudioPage() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ModelKey>("seedream-5-pro");
@@ -31,6 +63,7 @@ export function StudioPage() {
   const [batchSize, setBatchSize] = useState(1);
   const [references, setReferences] = useState<ReferenceFile[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generateElapsed, setGenerateElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [remainingBudgetUsd, setRemainingBudgetUsd] = useState<number | null>(null);
 
@@ -43,6 +76,7 @@ export function StudioPage() {
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const generateStartedAtRef = useRef<number | null>(null);
 
   const loadGallery = useCallback(async (cursor?: string | null, append = false) => {
     setIsLoadingGallery(true);
@@ -51,12 +85,15 @@ export function StudioPage() {
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/generations?${params}`);
-      const data = await res.json();
-      if (!res.ok) return;
+      const text = await res.text();
+      if (!text || !res.ok) return;
 
+      const data = JSON.parse(text);
       setGalleryItems((prev) => (append ? [...prev, ...data.items] : data.items));
       setNextCursor(data.nextCursor);
       setHasMore(data.hasMore);
+    } catch {
+      // ignore gallery refresh errors
     } finally {
       setIsLoadingGallery(false);
     }
@@ -80,6 +117,23 @@ export function StudioPage() {
     loadGallery();
     loadBudget();
   }, [loadGallery, loadBudget]);
+
+  useEffect(() => {
+    if (!isGenerating) {
+      setGenerateElapsed(0);
+      generateStartedAtRef.current = null;
+      return;
+    }
+
+    generateStartedAtRef.current = Date.now();
+    const interval = window.setInterval(() => {
+      if (generateStartedAtRef.current) {
+        setGenerateElapsed(Math.floor((Date.now() - generateStartedAtRef.current) / 1000));
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [isGenerating]);
 
   useEffect(() => {
     return () => {
@@ -110,11 +164,19 @@ export function StudioPage() {
   const handleSelectItem = useCallback(async (item: GalleryItem) => {
     try {
       const res = await fetch(`/api/generations/${item.generationId}`);
-      const data = await res.json();
-      if (res.ok) setSelectedGeneration(data);
+      const text = await res.text();
+      if (!text || !res.ok) return;
+      const data = JSON.parse(text);
+      setSelectedGeneration(data);
     } catch {
       // ignore
     }
+  }, []);
+
+  const handleCancelGenerate = useCallback(() => {
+    abortRef.current?.abort();
+    setIsGenerating(false);
+    setError("Generation cancelled.");
   }, []);
 
   const handleGenerate = useCallback(
@@ -153,9 +215,11 @@ export function StudioPage() {
           signal: abortRef.current.signal,
         });
 
-        const data = await response.json();
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
 
         if (response.status === 409 && data.error === "confirmation_required") {
+          setIsGenerating(false);
           const ok = window.confirm(data.message);
           if (ok) {
             await handleGenerate(true, overrides);
@@ -167,15 +231,28 @@ export function StudioPage() {
           throw new Error(data.error ?? "Generation failed.");
         }
 
+        const newItems = toGalleryItemsFromResponse(data);
+        if (newItems.length > 0) {
+          setGalleryItems((prev) => {
+            const seen = new Set(newItems.map((item) => item.id));
+            return [...newItems, ...prev.filter((item) => !seen.has(item.id))];
+          });
+        }
+
+        setIsGenerating(false);
+
         if (overrides) {
           await applyRestore(overrides);
         }
 
-        await loadGallery();
-        await loadBudget();
         setSelectedGeneration(null);
+        void loadBudget();
+        void loadGallery();
       } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (err instanceof Error && err.name === "AbortError") {
+          setError("Generation cancelled.");
+          return;
+        }
         setError(err instanceof Error ? err.message : "Generation failed.");
       } finally {
         setIsGenerating(false);
@@ -191,11 +268,11 @@ export function StudioPage() {
     async (generation: GenerationResult) => {
       try {
         const res = await fetch(`/api/generations/${generation.id}/restore`);
-        const data: RestorePayload = await res.json();
-        if (res.ok) {
-          await applyRestore(data);
-          setSelectedGeneration(null);
-        }
+        const text = await res.text();
+        if (!text || !res.ok) return;
+        const data: RestorePayload = JSON.parse(text);
+        await applyRestore(data);
+        setSelectedGeneration(null);
       } catch {
         setError("Failed to restore settings.");
       }
@@ -207,11 +284,11 @@ export function StudioPage() {
     async (generation: GenerationResult) => {
       try {
         const res = await fetch(`/api/generations/${generation.id}/restore`);
-        const data: RestorePayload = await res.json();
-        if (res.ok) {
-          setSelectedGeneration(null);
-          await handleGenerate(false, data);
-        }
+        const text = await res.text();
+        if (!text || !res.ok) return;
+        const data: RestorePayload = JSON.parse(text);
+        setSelectedGeneration(null);
+        await handleGenerate(false, data);
       } catch {
         setError("Failed to regenerate.");
       }
@@ -251,6 +328,7 @@ export function StudioPage() {
             batchSize={batchSize}
             references={references}
             isLoading={isGenerating}
+            elapsedSeconds={generateElapsed}
             remainingBudgetUsd={remainingBudgetUsd}
             onPromptChange={setPrompt}
             onModelChange={handleModelChange}
@@ -258,6 +336,7 @@ export function StudioPage() {
             onBatchSizeChange={setBatchSize}
             onReferencesChange={setReferences}
             onGenerate={handleGenerate}
+            onCancel={handleCancelGenerate}
           />
         </div>
       </main>

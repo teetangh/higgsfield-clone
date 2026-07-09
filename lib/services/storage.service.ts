@@ -104,21 +104,33 @@ export async function downloadImageToStorage(
   generationId: string,
   batchIndex: number
 ): Promise<{ relativePath: string; mimeType: string; thumbPath: string | null }> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download image: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.status}`);
+    }
+
+    const contentType = response.headers.get("content-type") ?? "image/png";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const { relativePath, thumbPath } = await saveOutput(
+      generationId,
+      buffer,
+      contentType,
+      batchIndex
+    );
+
+    return { relativePath, mimeType: contentType, thumbPath };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Image download timed out after 60 seconds.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const contentType = response.headers.get("content-type") ?? "image/png";
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const { relativePath, thumbPath } = await saveOutput(
-    generationId,
-    buffer,
-    contentType,
-    batchIndex
-  );
-
-  return { relativePath, mimeType: contentType, thumbPath };
 }
 
 function sanitizeFilename(name: string): string {

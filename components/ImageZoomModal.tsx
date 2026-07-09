@@ -6,10 +6,18 @@ import { useEffect, useCallback } from "react";
 interface ImageZoomModalProps {
   imageUrl: string;
   alt?: string;
+  prompt?: string;
   onClose: () => void;
+  onDetails?: () => void;
 }
 
-export function ImageZoomModal({ imageUrl, alt = "Generated image", onClose }: ImageZoomModalProps) {
+export function ImageZoomModal({
+  imageUrl,
+  alt = "Generated image",
+  prompt,
+  onClose,
+  onDetails,
+}: ImageZoomModalProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -28,33 +36,55 @@ export function ImageZoomModal({ imageUrl, alt = "Generated image", onClose }: I
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Image zoom"
+      aria-label="Image preview"
     >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-4 top-4 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:text-white"
-      >
-        Esc to close
-      </button>
+      <div className="flex shrink-0 items-center justify-between px-4 py-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:text-white"
+        >
+          Close (Esc)
+        </button>
+        {onDetails && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDetails();
+            }}
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:text-white"
+          >
+            Details
+          </button>
+        )}
+      </div>
+
       <div
-        className="relative max-h-[90vh] max-w-[90vw]"
+        className="relative flex min-h-0 flex-1 items-center justify-center p-4"
         onClick={(e) => e.stopPropagation()}
       >
         <Image
           src={imageUrl}
           alt={alt}
-          width={2048}
-          height={2048}
-          className="max-h-[90vh] w-auto object-contain"
+          width={4096}
+          height={4096}
+          className="max-h-full max-w-full object-contain"
           unoptimized
           loading="eager"
+          priority
         />
       </div>
+
+      {prompt && (
+        <div className="shrink-0 border-t border-white/10 bg-black/50 px-4 py-3">
+          <p className="line-clamp-3 text-center text-sm text-white/70">{prompt}</p>
+        </div>
+      )}
     </div>
   );
 }

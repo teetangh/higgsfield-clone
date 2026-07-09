@@ -7,6 +7,7 @@ import { GenerationDetailPanel } from "@/components/GenerationDetailPanel";
 import { ImageZoomModal } from "@/components/ImageZoomModal";
 import { PromptDock } from "@/components/PromptDock";
 import { TopNav } from "@/components/TopNav";
+import { useStudio } from "@/components/StudioProvider";
 import { getDefaultSizeForModel } from "@/lib/config/models";
 import { captureClientException } from "@/lib/sentry";
 import type {
@@ -58,48 +59,64 @@ function toGalleryItemsFromResponse(data: {
 }
 
 export function StudioPage() {
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<ModelKey>("seedream-5-pro");
-  const [size, setSize] = useState("2K");
-  const [batchSize, setBatchSize] = useState(1);
-  const [references, setReferences] = useState<ReferenceFile[]>([]);
+  const studio = useStudio();
+  const {
+    prompt,
+    setPrompt,
+    model,
+    setModel,
+    size,
+    setSize,
+    batchSize,
+    setBatchSize,
+    references,
+    setReferences,
+    gridColumns,
+    galleryItems,
+    setGalleryItems,
+    selectedGeneration,
+    setSelectedGeneration,
+    selectedGenerationId,
+    setSelectedGenerationId,
+  } = studio;
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateElapsed, setGenerateElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [remainingBudgetUsd, setRemainingBudgetUsd] = useState<number | null>(null);
 
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingGallery, setIsLoadingGallery] = useState(false);
 
-  const [selectedGeneration, setSelectedGeneration] = useState<GenerationResult | null>(null);
-  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<GalleryItem | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const generateStartedAtRef = useRef<number | null>(null);
 
-  const loadGallery = useCallback(async (cursor?: string | null, append = false) => {
-    setIsLoadingGallery(true);
-    try {
-      const params = new URLSearchParams({ limit: "20", view: "gallery" });
-      if (cursor) params.set("cursor", cursor);
+  const loadGallery = useCallback(
+    async (cursor?: string | null, append = false) => {
+      setIsLoadingGallery(true);
+      try {
+        const params = new URLSearchParams({ limit: "20", view: "gallery" });
+        if (cursor) params.set("cursor", cursor);
 
-      const res = await fetch(`/api/generations?${params}`);
-      const text = await res.text();
-      if (!text || !res.ok) return;
+        const res = await fetch(`/api/generations?${params}`);
+        const text = await res.text();
+        if (!text || !res.ok) return;
 
-      const data = JSON.parse(text);
-      setGalleryItems((prev) => (append ? [...prev, ...data.items] : data.items));
-      setNextCursor(data.nextCursor);
-      setHasMore(data.hasMore);
-    } catch (err) {
-      captureClientException(err, "StudioPage.loadGallery");
-      // ignore gallery refresh errors
-    } finally {
-      setIsLoadingGallery(false);
-    }
-  }, []);
+        const data = JSON.parse(text);
+        setGalleryItems((prev) => (append ? [...prev, ...data.items] : data.items));
+        setNextCursor(data.nextCursor);
+        setHasMore(data.hasMore);
+      } catch (err) {
+        captureClientException(err, "StudioPage.loadGallery");
+      } finally {
+        setIsLoadingGallery(false);
+      }
+    },
+    [setGalleryItems]
+  );
 
   const loadBudget = useCallback(async () => {
     try {
@@ -115,10 +132,33 @@ export function StudioPage() {
     }
   }, []);
 
+  const loadGenerationById = useCallback(
+    async (id: string): Promise<GenerationResult | null> => {
+      try {
+        const res = await fetch(`/api/generations/${id}`);
+        const text = await res.text();
+        if (!text || !res.ok) return null;
+        return JSON.parse(text) as GenerationResult;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
   useEffect(() => {
-    loadGallery();
-    loadBudget();
-  }, [loadGallery, loadBudget]);
+    void loadBudget();
+    if (galleryItems.length === 0) {
+      void loadGallery();
+    }
+  }, [loadGallery, loadBudget, galleryItems.length]);
+
+  useEffect(() => {
+    if (!selectedGenerationId || selectedGeneration) return;
+    void loadGenerationById(selectedGenerationId).then((gen) => {
+      if (gen) setSelectedGeneration(gen);
+    });
+  }, [selectedGenerationId, selectedGeneration, loadGenerationById, setSelectedGeneration]);
 
   useEffect(() => {
     if (!isGenerating) {
@@ -137,43 +177,54 @@ export function StudioPage() {
     return () => window.clearInterval(interval);
   }, [isGenerating]);
 
-  useEffect(() => {
-    return () => {
+  const handleModelChange = useCallback(
+    (newModel: ModelKey) => {
+      setModel(newModel);
+      setSize(getDefaultSizeForModel(newModel));
+    },
+    [setModel, setSize]
+  );
+
+  const applyRestore = useCallback(
+    async (payload: RestorePayload) => {
+      setPrompt(payload.prompt);
+      setModel(payload.model as ModelKey);
+      setSize(payload.size);
+      setBatchSize(payload.batchSize);
+
       references.forEach((r) => URL.revokeObjectURL(r.previewUrl));
-      abortRef.current?.abort();
-    };
-  }, [references]);
 
-  const handleModelChange = useCallback((newModel: ModelKey) => {
-    setModel(newModel);
-    setSize(getDefaultSizeForModel(newModel));
+      const restoredRefs = await Promise.all(
+        payload.referenceImages.map((img, i) => urlToReferenceFile(img.url, i))
+      );
+      setReferences(restoredRefs);
+    },
+    [references, setPrompt, setModel, setSize, setBatchSize, setReferences]
+  );
+
+  const handleDetails = useCallback(
+    async (item: GalleryItem) => {
+      const gen = await loadGenerationById(item.generationId);
+      if (gen) {
+        setSelectedGeneration(gen);
+        setSelectedGenerationId(item.generationId);
+      }
+    },
+    [loadGenerationById, setSelectedGeneration, setSelectedGenerationId]
+  );
+
+  const handlePreview = useCallback((item: GalleryItem) => {
+    setPreviewItem(item);
   }, []);
 
-  const applyRestore = useCallback(async (payload: RestorePayload) => {
-    setPrompt(payload.prompt);
-    setModel(payload.model as ModelKey);
-    setSize(payload.size);
-    setBatchSize(payload.batchSize);
-
-    references.forEach((r) => URL.revokeObjectURL(r.previewUrl));
-
-    const restoredRefs = await Promise.all(
-      payload.referenceImages.map((img, i) => urlToReferenceFile(img.url, i))
-    );
-    setReferences(restoredRefs);
-  }, [references]);
-
-  const handleSelectItem = useCallback(async (item: GalleryItem) => {
-    try {
-      const res = await fetch(`/api/generations/${item.generationId}`);
-      const text = await res.text();
-      if (!text || !res.ok) return;
-      const data = JSON.parse(text);
-      setSelectedGeneration(data);
-    } catch {
-      // ignore
-    }
+  const handleClosePreview = useCallback(() => {
+    setPreviewItem(null);
   }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setSelectedGeneration(null);
+    setSelectedGenerationId(null);
+  }, [setSelectedGeneration, setSelectedGenerationId]);
 
   const handleCancelGenerate = useCallback(() => {
     abortRef.current?.abort();
@@ -247,7 +298,7 @@ export function StudioPage() {
           await applyRestore(overrides);
         }
 
-        setSelectedGeneration(null);
+        handleCloseDetails();
         void loadBudget();
         void loadGallery();
       } catch (err) {
@@ -264,7 +315,19 @@ export function StudioPage() {
         }
       }
     },
-    [prompt, model, size, batchSize, references, isGenerating, loadGallery, loadBudget, applyRestore]
+    [
+      prompt,
+      model,
+      size,
+      batchSize,
+      references,
+      isGenerating,
+      loadGallery,
+      loadBudget,
+      applyRestore,
+      setGalleryItems,
+      handleCloseDetails,
+    ]
   );
 
   const handleReuse = useCallback(
@@ -275,13 +338,14 @@ export function StudioPage() {
         if (!text || !res.ok) return;
         const data: RestorePayload = JSON.parse(text);
         await applyRestore(data);
-        setSelectedGeneration(null);
+        handleCloseDetails();
+        setPreviewItem(null);
       } catch (err) {
         captureClientException(err, "StudioPage.handleReuse");
         setError("Failed to restore settings.");
       }
     },
-    [applyRestore]
+    [applyRestore, handleCloseDetails]
   );
 
   const handleRegenerate = useCallback(
@@ -291,14 +355,15 @@ export function StudioPage() {
         const text = await res.text();
         if (!text || !res.ok) return;
         const data: RestorePayload = JSON.parse(text);
-        setSelectedGeneration(null);
+        handleCloseDetails();
+        setPreviewItem(null);
         await handleGenerate(false, data);
       } catch (err) {
         captureClientException(err, "StudioPage.handleRegenerate");
         setError("Failed to regenerate.");
       }
     },
-    [handleGenerate]
+    [handleGenerate, handleCloseDetails]
   );
 
   return (
@@ -317,11 +382,12 @@ export function StudioPage() {
             items={galleryItems}
             hasMore={hasMore}
             isLoading={isLoadingGallery}
+            gridColumns={gridColumns}
             onLoadMore={() => {
               if (nextCursor && !isLoadingGallery) loadGallery(nextCursor, true);
             }}
-            onSelect={handleSelectItem}
-            onZoom={(item) => setZoomUrl(item.imageUrl)}
+            onPreview={handlePreview}
+            onDetails={handleDetails}
           />
         </ErrorBoundary>
 
@@ -349,15 +415,26 @@ export function StudioPage() {
       {selectedGeneration && (
         <GenerationDetailPanel
           generation={selectedGeneration}
-          onClose={() => setSelectedGeneration(null)}
+          onClose={handleCloseDetails}
           onReuse={handleReuse}
           onRegenerate={handleRegenerate}
-          onZoom={setZoomUrl}
+          onZoom={(url) => {
+            const item = galleryItems.find((g) => g.imageUrl === url || g.thumbUrl === url);
+            if (item) setPreviewItem(item);
+          }}
         />
       )}
 
-      {zoomUrl && (
-        <ImageZoomModal imageUrl={zoomUrl} onClose={() => setZoomUrl(null)} />
+      {previewItem && (
+        <ImageZoomModal
+          imageUrl={previewItem.imageUrl}
+          alt={previewItem.prompt}
+          prompt={previewItem.prompt}
+          onClose={handleClosePreview}
+          onDetails={() => {
+            void handleDetails(previewItem);
+          }}
+        />
       )}
     </div>
   );

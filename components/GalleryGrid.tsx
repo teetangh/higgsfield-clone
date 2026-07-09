@@ -1,27 +1,38 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { GalleryItem } from "@/lib/types";
 
 interface GalleryGridProps {
   items: GalleryItem[];
   hasMore: boolean;
   isLoading: boolean;
+  gridColumns: number;
   onLoadMore: () => void;
-  onSelect: (item: GalleryItem) => void;
-  onZoom: (item: GalleryItem) => void;
+  onPreview: (item: GalleryItem) => void;
+  onDetails: (item: GalleryItem) => void;
 }
+
+const COLUMN_CLASSES: Record<number, string> = {
+  2: "columns-2",
+  3: "columns-3",
+  4: "columns-4",
+  5: "columns-5",
+  6: "columns-6",
+};
 
 export function GalleryGrid({
   items,
   hasMore,
   isLoading,
+  gridColumns,
   onLoadMore,
-  onSelect,
-  onZoom,
+  onPreview,
+  onDetails,
 }: GalleryGridProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const columnClass = COLUMN_CLASSES[gridColumns] ?? "columns-4";
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -51,35 +62,50 @@ export function GalleryGrid({
 
   return (
     <div className="flex-1 overflow-y-auto px-4 pb-4">
-      <div className="columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
+      <div className={`${columnClass} gap-3`}>
         {items.map((item) => (
           <div
             key={item.id}
             className="mb-3 break-inside-avoid"
             style={{ contentVisibility: "auto", containIntrinsicSize: "0 200px" }}
           >
-            <button
-              type="button"
-              onClick={() => onSelect(item)}
-              onDoubleClick={() => onZoom(item)}
-              className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30"
-            >
-              <Image
-                src={item.thumbUrl}
-                alt={item.prompt}
-                width={400}
-                height={400}
-                className="h-auto w-full object-cover"
-                unoptimized
-                loading="lazy"
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="group relative w-full overflow-hidden rounded-xl border border-white/5 bg-white/5 transition-colors hover:border-yellow-400/30">
+              <button
+                type="button"
+                onClick={() => onPreview(item)}
+                className="block w-full"
+                aria-label={`Preview: ${item.prompt}`}
+              >
+                <Image
+                  src={item.thumbUrl}
+                  alt={item.prompt}
+                  width={400}
+                  height={400}
+                  className="h-auto w-full object-cover"
+                  unoptimized
+                  loading="lazy"
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDetails(item);
+                }}
+                className="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/80 opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
+                aria-label="View generation details"
+              >
+                Details
+              </button>
+
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
                 <p className="line-clamp-2 text-left text-[10px] text-white/80">{item.prompt}</p>
                 {item.batchSize > 1 && (
                   <span className="text-[10px] text-yellow-400/80">{item.batchSize} images</span>
                 )}
               </div>
-            </button>
+            </div>
           </div>
         ))}
       </div>
